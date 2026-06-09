@@ -28,6 +28,11 @@ concurrency:
   group: wc26-live
   cancel-in-progress: false   # let any in-flight rerun finish
 
+# GITHUB_TOKEN is read-only by default on repos created after 2023.
+# We need contents:write so the bot can push the live JSON updates.
+permissions:
+  contents: write
+
 jobs:
   live:
     runs-on: ubuntu-latest
@@ -79,6 +84,37 @@ jobs:
           fi
           echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
           echo "Provider for this run: $PROVIDER"
+
+      - name: Rebuild fixture map if provider changed
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          API_FOOTBALL_KEY:  ${{ secrets.API_FOOTBALL_KEY }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+        run: |
+          set +e
+          PROVIDER="${{ steps.provider.outputs.provider }}"
+          MAP=data/live/provider_fixture_map.json
+          # Compare the provider baked into the existing map vs the requested one.
+          CURRENT=$(python -c "import json,sys;
+try: print(json.load(open('$MAP')).get('provider',''))
+except Exception: print('')" 2>/dev/null)
+          if [ "$CURRENT" = "$PROVIDER" ]; then
+            echo "Fixture map already targets $PROVIDER — skipping rebuild."
+            exit 0
+          fi
+          echo "Fixture map provider mismatch: have='$CURRENT' want='$PROVIDER' — rebuilding."
+          # Back up the current map so we can roll back if the rebuild yields too few fixtures.
+          if [ -f "$MAP" ]; then cp "$MAP" "${MAP}.bak"; fi
+          python scripts/live/build_provider_fixture_map.py \
+            --provider "$PROVIDER" --season 2026 --league-id 1 --write
+          RC=$?
+          if [ $RC -ne 0 ] && [ -f "${MAP}.bak" ]; then
+            echo "Rebuild failed — restoring previous fixture map."
+            mv "${MAP}.bak" "$MAP"
+          else
+            rm -f "${MAP}.bak"
+          fi
+          exit 0
 
       - name: Run live update orchestrator
         if: steps.gate.outputs.skip != 'true'
