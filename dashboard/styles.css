@@ -1,6 +1,8 @@
 /* World Cup 2026 dashboard — semantic tokens, light + dark themes, animations. */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts are loaded via <link rel="stylesheet"> in index.html (with preconnect)
+   so they don't sit on the critical path behind styles.css parsing.
+   Do NOT re-add @import here — it chains a render-blocking request. */
 
 :root {
   --bg:                 #0A0A0B;
@@ -274,7 +276,9 @@ nav.top-nav a:hover { color: var(--text); background: var(--surface); }
   nav.top-nav::-webkit-scrollbar { display: none; }
   nav.top-nav a { flex: 0 0 auto; }
   .site-header .container { flex-wrap: wrap; }
-  .last-updated { display: none; }
+  /* Keep `.last-updated` visible on tablet and phone — it's the user's only
+     signal the live-polling loop is still ticking. Mobile-specific tuning
+     (font, alignment) handled in the 768px block below. */
 }
 @media (max-width: 600px) {
   .brand-sub { display: none; }
@@ -1316,10 +1320,10 @@ section#contenders .card > .filter-row {
   }
   nav.top-nav::-webkit-scrollbar { display: none; }
   nav.top-nav a {
-    padding: 10px 12px;
+    padding: 12px 14px;
     font-size: 13px;
     flex: 0 0 auto;
-    min-height: 40px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
   }
@@ -1333,20 +1337,23 @@ section#contenders .card > .filter-row {
   section h2 { font-size: 19px; }
   .section-desc { font-size: 13px; }
 
-  /* Touch-target floor: 44px tappable area for all interactive controls */
-  button, select, .btn-ghost, .btn-secondary, .chip,
-  .match-view-toggle button {
-    min-height: 40px;
+  /* Touch-target floor: 44px tappable area for all interactive controls
+     (Apple HIG / WCAG 2.5.5). Match-view-toggle stays slightly smaller
+     because it's a tightly-grouped segmented control where 44px each would
+     blow out the container; 40px is the compromise for grouped controls. */
+  button, select, .btn-ghost, .btn-secondary, .chip {
+    min-height: 44px;
   }
-  .btn-ghost, .btn-secondary { padding: 8px 14px; }
-  .chip { padding: 8px 14px; font-size: 13px; }
-  .match-view-toggle button { padding: 8px 14px; min-height: 36px; }
+  .btn-ghost, .btn-secondary { padding: 10px 16px; }
+  .chip { padding: 10px 14px; font-size: 13px; }
+  .match-view-toggle button { padding: 10px 14px; min-height: 40px; }
 
   /* Filter rows: stack and let selects take full width */
   .filter-row { gap: 8px; }
   .filter-row label { width: 100%; }
-  /* 16px on selects prevents iOS Safari from zooming on focus, same as inputs. */
-  .filter-row select { width: 100%; min-height: 40px; font-size: 16px; }
+  /* 16px on selects prevents iOS Safari from zooming on focus, same as inputs.
+     44px floor matches Apple HIG / WCAG 2.5.5 tap-target recommendation. */
+  .filter-row select { width: 100%; min-height: 44px; font-size: 16px; }
   .filter-row .search-label { width: 100%; }
   .search-label input[type="search"] {
     min-width: 0; width: 100%; font-size: 16px; /* 16px prevents iOS zoom */
@@ -1361,7 +1368,7 @@ section#contenders .card > .filter-row {
   /* Compare pickers: full-width selects on mobile (16px = no iOS zoom on focus) */
   .compare-pickers { gap: 8px; }
   .compare-pickers label { width: 100%; }
-  .compare-pickers select { min-width: 0; width: 100%; font-size: 16px; min-height: 40px; }
+  .compare-pickers select { min-width: 0; width: 100%; font-size: 16px; min-height: 44px; }
   .compare-pickers .vs-pill { align-self: center; }
   #cmp-swap { width: 100%; }
 
@@ -1397,9 +1404,10 @@ section#contenders .card > .filter-row {
 
   /* Top controls don't crowd brand. Keep the freshness timestamp visible —
      it's the user's only signal that the live polling loop is actually
-     ticking — but shrink it so it doesn't compete with the brand. */
+     ticking — but shrink it so it doesn't compete with the brand.
+     `display: block` here overrides the 1100px-block which used to hide it. */
   .top-controls { gap: 8px; flex-wrap: wrap; }
-  .last-updated { font-size: 11px; opacity: 0.75; flex-basis: 100%; text-align: right; }
+  .last-updated { display: block; font-size: 11px; opacity: 0.75; flex-basis: 100%; text-align: right; }
 
   /* Prevent any errant horizontal overflow at viewport edges */
   html, body { overflow-x: hidden; }

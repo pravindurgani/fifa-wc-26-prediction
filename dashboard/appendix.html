@@ -372,6 +372,15 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
       localStorage.setItem('wc26-theme', cur);
     });
 
+    // Defence-in-depth: even though these JSON files are internally generated
+    // today, any future config that pipes provider/team names through them
+    // would create an XSS sink. Escape every interpolated string.
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     async function loadAppendixData() {
       const buster = `?t=${Date.now()}`;
       const opt = (u) => fetch(u + buster).then(r => r.ok ? r.json() : null).catch(() => null);
@@ -385,12 +394,12 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
       const wfBody = document.getElementById('apx-wf');
       if (wfBody && wf) {
         wfBody.innerHTML = Object.entries(wf).map(([yr, r]) =>
-          `<tr><td><strong>${yr}</strong></td>
-           <td class="num">${r.test_n}</td>
-           <td class="num">${r.log_loss.toFixed(3)}</td>
-           <td class="num">${r.brier.toFixed(3)}</td>
-           <td class="num">${(r.accuracy*100).toFixed(1)}%</td>
-           <td class="num" style="color: var(--success)">+${r.lift_vs_baseline.toFixed(3)}</td></tr>`
+          `<tr><td><strong>${esc(yr)}</strong></td>
+           <td class="num">${esc(r.test_n)}</td>
+           <td class="num">${(+r.log_loss).toFixed(3)}</td>
+           <td class="num">${(+r.brier).toFixed(3)}</td>
+           <td class="num">${(+r.accuracy*100).toFixed(1)}%</td>
+           <td class="num" style="color: var(--success)">+${(+r.lift_vs_baseline).toFixed(3)}</td></tr>`
         ).join('');
       }
 
@@ -399,10 +408,10 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
         const rows = [];
         for (const [name, m] of Object.entries(abl)) {
           if (name === 'lift' || name === 'note' || typeof m !== 'object') continue;
-          rows.push(`<tr><td><strong>${name.replace(/_/g, ' ')}</strong></td>
-            <td class="num">${m.log_loss.toFixed(3)}</td>
-            <td class="num">${m.brier.toFixed(3)}</td>
-            <td class="num">${(m.accuracy*100).toFixed(1)}%</td></tr>`);
+          rows.push(`<tr><td><strong>${esc(name.replace(/_/g, ' '))}</strong></td>
+            <td class="num">${(+m.log_loss).toFixed(3)}</td>
+            <td class="num">${(+m.brier).toFixed(3)}</td>
+            <td class="num">${(+m.accuracy*100).toFixed(1)}%</td></tr>`);
         }
         ablBody.innerHTML = rows.join('');
       }
@@ -415,7 +424,7 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
             const mean = (t.mean_champion_p ?? t.mean ?? 0) * 100;
             const mn   = (t.min ?? 0) * 100;
             const mx   = (t.max ?? 0) * 100;
-            return `<tr><td><strong>${t.team}</strong></td>
+            return `<tr><td><strong>${esc(t.team)}</strong></td>
              <td class="num">${mean.toFixed(1)}%</td>
              <td class="num">${mn.toFixed(1)}%</td>
              <td class="num">${mx.toFixed(1)}%</td>
