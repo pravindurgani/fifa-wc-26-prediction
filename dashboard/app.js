@@ -147,6 +147,7 @@ function renderLastUpdated(data, liveState) {
 function providerLabel(source) {
   const s = (source || '').toLowerCase();
   if (s === 'api_football')      return 'API-Football (live)';
+  if (s === 'football_data')     return 'football-data.org (live)';
   if (s === 'sportmonks')        return 'Sportmonks (live)';
   if (s === 'manual/mock' || s === 'mock' || !s) return 'manual / mock';
   return source;

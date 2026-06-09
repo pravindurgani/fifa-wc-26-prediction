@@ -236,14 +236,75 @@ The `live-matchday` workflow runs every 10 minutes (11 Jun → 19 Jul 2026),
 detects the new locked match, re-simulates, and commits updated JSON. The
 dashboard label reads `provider: manual / mock`.
 
-### Option B — activate API-Football (recommended for the tournament)
+### Provider comparison (quick decision matrix)
 
-**Total time:** ~10 minutes once you have the key.
+| Provider | Free tier covers WC2026? | Cost for paid | When to pick |
+|---|---|---|---|
+| **football-data.org** | **✅ Yes — FREE WC coverage** (10 req/min) | n/a | **Recommended free option.** Use `provider=football_data`. |
+| **API-Football** | ❌ No (free = 2022–2024 only) | Pro: ~$19/mo | Pick if you already pay or want richer stats/lineups |
+| **Sportmonks** | Trial tier exists | varies (€19+/mo) | Adapter not yet implemented |
+| **manual / mock** | ✅ (always works) | $0 | If you don't want to touch APIs at all |
+
+> ⚠️ **Watch out**: API-Football's free plan returns a 200 OK with
+> `{"errors": {"plan": "Free plans do not have access to this season..."}}`
+> — looks like success at the HTTP layer but the response is empty. Our
+> fetcher handles this gracefully (falls back to mock) but the builder
+> will refuse to write a 0/72 fixture map. Either upgrade to Pro or switch
+> to `football_data`.
+
+---
+
+### Option B1 — activate football-data.org (FREE, recommended)
+
+**Total time:** ~5 minutes.
+
+#### Step 1 — Get the token
+
+1. Sign up at <https://www.football-data.org/client/register>.
+2. Free tier gives 10 req/min and covers competition `WC`.
+3. Copy your API token from your account page.
+
+#### Step 2 — Configure the repo
+
+```bash
+gh secret set FOOTBALL_DATA_TOKEN     # paste token when prompted
+gh variable set FOOTBALL_PROVIDER --body football_data
+```
+
+#### Step 3 — Build the fixture map
+
+```bash
+export FOOTBALL_DATA_TOKEN="<your token>"
+export FOOTBALL_PROVIDER=football_data
+python3 scripts/live/build_provider_fixture_map.py --provider football_data
+# If it reports "all 72 group fixtures mapped":
+python3 scripts/live/build_provider_fixture_map.py --provider football_data --write
+git add data/live/provider_fixture_map.json
+git commit -m "feat: football-data.org fixture-id map for WC2026"
+git push
+```
+
+#### Step 4 — Trigger the workflow
+
+```bash
+gh workflow run live-matchday.yml -f provider=football_data -f dry_run=true
+gh run watch
+# If green:
+gh workflow run live-matchday.yml
+curl -s https://fifa-wc-26-prediction.vercel.app/live_state.json | python3 -m json.tool
+# expect: "source": "football_data", "provider_mode": "active"
+```
+
+---
+
+### Option B2 — activate API-Football (paid only for WC2026)
+
+**Total time:** ~10 minutes once you have a Pro key.
 
 #### Step 1 — Get the key
 
-1. Sign up at <https://www.api-football.com/> (free tier = 100 requests/day,
-   plenty for 10-minute polling during a 38-day tournament).
+1. Sign up at <https://www.api-football.com/> and **upgrade to Pro or Ultra**
+   (Free tier blocks 2022+ — you'll get an empty response on WC2026 calls).
 2. From your API-Football dashboard, copy the API key.
 3. Find the FIFA World Cup 2026 league id — it appears in the dashboard's
    "Coverage / Leagues" section. The default is `1`; if API-Football uses a

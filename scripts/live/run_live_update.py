@@ -115,10 +115,14 @@ def detect_provider_source() -> tuple[str, str]:
                 or "mock").strip().lower().replace("-", "_")
     apifootball_key = (os.environ.get("API_FOOTBALL_KEY")
                        or os.environ.get("WC_APIFOOTBALL_KEY"))
+    football_data_token = (os.environ.get("FOOTBALL_DATA_TOKEN")
+                           or os.environ.get("WC_FOOTBALL_DATA_TOKEN"))
     sportmonks_token = (os.environ.get("SPORTMONKS_TOKEN")
                         or os.environ.get("WC_SPORTMONKS_TOKEN"))
     if provider in ("api_football", "apifootball") and apifootball_key:
         return "api_football", "active"
+    if provider in ("football_data", "footballdata") and football_data_token:
+        return "football_data", "active"
     if provider == "sportmonks" and sportmonks_token:
         return "sportmonks", "active"
     return "manual/mock", "manual"

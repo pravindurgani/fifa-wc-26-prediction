@@ -36,7 +36,8 @@ RAW = ROOT / "data" / "raw"
 sys.path.insert(0, str(Path(__file__).parent))
 from fetch_results import (  # noqa: E402
     normalize_team, http_get_json, atomic_write_json,
-    get_api_football_key, APIFOOTBALL_BASE,
+    get_api_football_key, get_football_data_token,
+    APIFOOTBALL_BASE, FOOTBALLDATA_BASE,
 )
 
 
@@ -52,15 +53,118 @@ def fetch_apifootball_fixtures(api_key: str, league_id: str, season: str) -> lis
     return payload.get("response", []) or []
 
 
+def fetch_football_data_fixtures(token: str, competition: str = "WC") -> list[dict]:
+    """Returns football-data.org matches in their native shape (caller maps to internal)."""
+    import urllib.error
+    headers = {"X-Auth-Token": token, "Accept": "application/json"}
+    url = f"{FOOTBALLDATA_BASE}/competitions/{competition}/matches"
+    print(f"[builder] GET {url}")
+    try:
+        payload = http_get_json(url, headers)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try: body = e.read().decode("utf-8")[:300]
+        except Exception: pass
+        print(f"[builder] football-data.org HTTP {e.code}: {body}")
+        if e.code == 400:
+            print(f"[builder] HTTP 400 usually means: invalid token format, or the WC2026")
+            print(f"[builder] competition isn't yet available in football-data.org's index.")
+            print(f"[builder] Verify the token at https://api.football-data.org/v4/competitions")
+            print(f"[builder] (curl -s -H 'X-Auth-Token: <YOUR_TOKEN>' that URL).")
+        elif e.code in (401, 403):
+            print(f"[builder] HTTP {e.code}: token is wrong/unauthorised. Double-check you")
+            print(f"[builder] got the token from https://www.football-data.org/client/register")
+            print(f"[builder] (NOT the API-Football key — they're different services).")
+        elif e.code == 429:
+            print(f"[builder] HTTP 429: rate-limited. Free tier is 10 req/min. Wait 60s.")
+        raise
+    return payload.get("matches", []) or []
+
+
+def check_football_data_token(token: str) -> bool:
+    """Hit /v4/competitions with the token. Returns True if 200 OK + WC is listed."""
+    import urllib.error
+    headers = {"X-Auth-Token": token, "Accept": "application/json"}
+    url = f"{FOOTBALLDATA_BASE}/competitions"
+    print(f"[builder] Verifying token via GET {url}")
+    try:
+        payload = http_get_json(url, headers)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try: body = e.read().decode("utf-8")[:300]
+        except Exception: pass
+        print(f"[builder] token check failed: HTTP {e.code} {body}")
+        return False
+    comps = payload.get("competitions") or []
+    print(f"[builder] token is valid — {len(comps)} competitions visible")
+    wc = [c for c in comps if c.get("code") == "WC" or (c.get("name") or "").startswith("FIFA World Cup")]
+    if wc:
+        print(f"[builder] ✓ FIFA World Cup IS available to this token "
+              f"(code={wc[0].get('code')}, name={wc[0].get('name')}, "
+              f"plan-tier={wc[0].get('plan', '?')})")
+        return True
+    else:
+        print(f"[builder] ✗ FIFA World Cup is NOT in the competitions list for this token.")
+        print(f"[builder]   Free tier should include it. Check your plan at "
+              f"https://www.football-data.org/account.")
+        sample = [c.get("code") for c in comps][:10]
+        print(f"[builder]   Sample of available competitions: {sample}")
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", default="api_football",
-                    choices=["api_football", "sportmonks"])
+                    choices=["api_football", "football_data", "sportmonks"])
     ap.add_argument("--league-id", default=None)
     ap.add_argument("--season", default="2026")
     ap.add_argument("--write", action="store_true",
                     help="Write the map. Without this flag, dry-run only.")
+    ap.add_argument("--allow-partial", action="store_true",
+                    help="Force-write even if fewer than 72 group fixtures mapped. "
+                         "Use only if you know what you're doing.")
+    ap.add_argument("--min-mapped", type=int, default=72,
+                    help="Minimum mapped fixtures required to write (default: 72).")
+    ap.add_argument("--check-token", action="store_true",
+                    help="Only verify the provider token works (no map write). "
+                         "Use this first when troubleshooting auth.")
     args = ap.parse_args()
+
+    # --check-token shortcut
+    if args.check_token:
+        if args.provider == "football_data":
+            token = get_football_data_token()
+            if not token:
+                print("[builder] FOOTBALL_DATA_TOKEN not set in env. Export it and re-run.")
+                return 2
+            return 0 if check_football_data_token(token) else 1
+        elif args.provider == "api_football":
+            key = get_api_football_key()
+            if not key:
+                print("[builder] API_FOOTBALL_KEY not set in env. Export it and re-run.")
+                return 2
+            try:
+                payload = http_get_json(
+                    f"{APIFOOTBALL_BASE}/status",
+                    {"x-apisports-key": key, "Accept": "application/json"},
+                )
+                resp = payload.get("response") or {}
+                acct = resp.get("account") or {}
+                sub = resp.get("subscription") or {}
+                print(f"[builder] API-Football token OK — account: "
+                      f"{acct.get('firstname','?')} {acct.get('lastname','?')}, "
+                      f"plan: {sub.get('plan','?')}, "
+                      f"requests today: {(resp.get('requests') or {}).get('current','?')}/"
+                      f"{(resp.get('requests') or {}).get('limit_day','?')}")
+                if sub.get("plan", "").lower() == "free":
+                    print(f"[builder] ⚠ FREE plan — 2026 WC fixtures will return empty. Upgrade to Pro/Ultra.")
+                return 0
+            except Exception as e:
+                print(f"[builder] API-Football token check failed: {type(e).__name__}: {e}")
+                return 1
+        else:
+            print(f"[builder] --check-token not implemented for {args.provider}")
+            return 2
 
     cfg = json.loads((RAW / "wc2026_config.json").read_text())
     schedule = cfg["group_stage_schedule"]
@@ -105,10 +209,34 @@ def main() -> int:
             print("[builder] API_FOOTBALL_KEY not set. Export it and re-run.")
             return 2
         try:
-            fixtures = fetch_apifootball_fixtures(key, league_id, args.season)
+            fixtures_raw = fetch_apifootball_fixtures(key, league_id, args.season)
         except Exception as e:
             print(f"[builder] provider fetch failed: {type(e).__name__}: {e}")
             return 1
+        # Normalise to a common shape: {id, home, away, date}
+        fixtures = [{
+            "id": str((f.get("fixture") or {}).get("id", "")),
+            "home_raw": ((f.get("teams") or {}).get("home") or {}).get("name", ""),
+            "away_raw": ((f.get("teams") or {}).get("away") or {}).get("name", ""),
+            "date": ((f.get("fixture") or {}).get("date") or "")[:10],
+        } for f in fixtures_raw]
+    elif args.provider == "football_data":
+        token = get_football_data_token()
+        if not token:
+            print("[builder] FOOTBALL_DATA_TOKEN not set. Export it and re-run.")
+            return 2
+        competition = os.environ.get("FOOTBALL_DATA_COMPETITION") or "WC"
+        try:
+            fixtures_raw = fetch_football_data_fixtures(token, competition)
+        except Exception as e:
+            print(f"[builder] provider fetch failed: {type(e).__name__}: {e}")
+            return 1
+        fixtures = [{
+            "id": str(m.get("id", "")),
+            "home_raw": (m.get("homeTeam") or {}).get("name", ""),
+            "away_raw": (m.get("awayTeam") or {}).get("name", ""),
+            "date": (m.get("utcDate") or "")[:10],
+        } for m in fixtures_raw]
     else:
         print(f"[builder] {args.provider} adapter not yet implemented")
         return 2
@@ -118,20 +246,17 @@ def main() -> int:
     mapped: list[dict] = []
     unmapped_provider: list[dict] = []
     for f in fixtures:
-        fx = f.get("fixture") or {}
-        teams = f.get("teams") or {}
-        provider_id = str(fx.get("id", ""))
-        home = normalize_team((teams.get("home") or {}).get("name", ""))
-        away = normalize_team((teams.get("away") or {}).get("name", ""))
-        date = (fx.get("date") or "")[:10]
+        provider_id = f["id"]
+        home = normalize_team(f["home_raw"])
+        away = normalize_team(f["away_raw"])
+        date = f["date"]
 
         m_id = lookup(home, away, date)
         if m_id is None:
             unmapped_provider.append({
                 "provider_fixture_id": provider_id,
                 "date": date, "home": home, "away": away,
-                "raw_home": (teams.get("home") or {}).get("name"),
-                "raw_away": (teams.get("away") or {}).get("name"),
+                "raw_home": f["home_raw"], "raw_away": f["away_raw"],
             })
             continue
         mapped.append({
@@ -164,6 +289,23 @@ def main() -> int:
         print("[builder] dry-run — no file written. Re-run with --write to commit.")
         return 0
 
+    # Refuse to write a useless map unless explicitly overridden
+    if len(mapped) < args.min_mapped and not args.allow_partial:
+        print(f"\n[builder] REFUSING TO WRITE: only {len(mapped)}/{args.min_mapped} fixtures mapped.")
+        print("[builder] A partial map is worse than no map — the fetcher's fuzzy fallback")
+        print("[builder]   handles missing IDs gracefully, but a stub map with 0 entries")
+        print("[builder]   will be treated as authoritative and cause every fixture to be unmapped.")
+        print("[builder]")
+        print("[builder] Likely causes:")
+        print("[builder]   • API-Football FREE plan blocks current/future seasons (2022–2024 only).")
+        print("[builder]     → Upgrade to Pro/Ultra, OR switch to provider=football_data (free WC coverage).")
+        print("[builder]   • Wrong league_id — pass --league-id <N> after checking your provider's WC league.")
+        print("[builder]   • Wrong season — pass --season 2026 (default).")
+        print("[builder]   • Provider uses a team name not in TEAM_ALIAS — add it to scripts/live/fetch_results.py.")
+        print("[builder]")
+        print(f"[builder] To force-write the partial map anyway: --allow-partial")
+        return 1
+
     out = {
         "provider": args.provider,
         "league_id": league_id,
@@ -177,7 +319,7 @@ def main() -> int:
     atomic_write_json(out_path, out)
     print(f"[builder] wrote {out_path}")
     if len(mapped) < 72:
-        print(f"[builder] EXIT 1: only {len(mapped)}/72 mapped — fix aliases before relying on this map")
+        print(f"[builder] WARN: only {len(mapped)}/72 mapped — fetcher will fuzzy-match the rest")
         return 1
     return 0
 

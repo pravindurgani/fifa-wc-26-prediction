@@ -3,11 +3,14 @@ fetch_results.py — Pluggable live-score fetcher.
 
 Sources (selected via env var FOOTBALL_PROVIDER, with WC_RESULTS_SOURCE as a
 backward-compatible alias):
-  - mock (default) — reads data/live/results_2026.json as-is (manual mode)
-  - api_football  — live adapter for API-Football (requires API_FOOTBALL_KEY,
-                    or WC_APIFOOTBALL_KEY for backward compatibility)
-  - sportmonks    — placeholder adapter for Sportmonks (requires SPORTMONKS_TOKEN
-                    or WC_SPORTMONKS_TOKEN)
+  - mock (default)  — reads data/live/results_2026.json as-is (manual mode)
+  - api_football    — live adapter for API-Football (requires API_FOOTBALL_KEY,
+                      or WC_APIFOOTBALL_KEY for backward compatibility).
+                      NOTE: API-Football FREE tier blocks 2026 — must be Pro+
+  - football_data   — live adapter for football-data.org (requires
+                      FOOTBALL_DATA_TOKEN). FREE TIER covers FIFA World Cup.
+  - sportmonks      — placeholder adapter for Sportmonks (requires SPORTMONKS_TOKEN
+                      or WC_SPORTMONKS_TOKEN)
 
 Each adapter returns a list of normalised records:
   {
@@ -73,6 +76,23 @@ APIFOOTBALL_STATUS_MAP = {
     "ET":   "LIVE", "BT": "LIVE", "P":  "LIVE", "LIVE": "LIVE",
 }
 
+# football-data.org status strings → our internal canonical status
+# https://docs.football-data.org/general/v4/lookup_tables.html
+FOOTBALLDATA_STATUS_MAP = {
+    "SCHEDULED":   "SCHEDULED",
+    "TIMED":       "SCHEDULED",
+    "IN_PLAY":     "LIVE",
+    "PAUSED":      "LIVE",
+    "EXTRA_TIME":  "LIVE",
+    "PENALTY_SHOOTOUT": "LIVE",
+    "FINISHED":    "FT",         # generic full-time; AET/PEN inferred from score blocks
+    "AWARDED":     "WALKOVERAWARD",
+    "POSTPONED":   "POSTPONED",
+    "SUSPENDED":   "SUSPENDED",
+    "CANCELLED":   "CANCELED",
+    "CANCELED":    "CANCELED",
+}
+
 # Team-name normalisation: provider name → our canonical name
 TEAM_ALIAS = {
     "USA":                "United States",
@@ -123,6 +143,11 @@ def get_api_football_key() -> str | None:
 def get_sportmonks_token() -> str | None:
     return (os.environ.get("SPORTMONKS_TOKEN")
             or os.environ.get("WC_SPORTMONKS_TOKEN"))
+
+
+def get_football_data_token() -> str | None:
+    return (os.environ.get("FOOTBALL_DATA_TOKEN")
+            or os.environ.get("WC_FOOTBALL_DATA_TOKEN"))
 
 
 # ─── ATOMIC IO ─────────────────────────────────────────────────────────────
@@ -344,6 +369,133 @@ def fetch_api_football(api_key: str, dry_run: bool = False) -> list[dict]:
     return out
 
 
+# ─── PROVIDER: FOOTBALL-DATA.ORG ───────────────────────────────────────────
+FOOTBALLDATA_BASE = "https://api.football-data.org/v4"
+
+
+def fetch_football_data(token: str, dry_run: bool = False) -> list[dict]:
+    """Fetch WC2026 fixtures from football-data.org, normalise to our schema.
+
+    Free tier:
+      - 10 requests/minute
+      - FIFA World Cup competition code: "WC"
+      - Endpoint: GET /v4/competitions/WC/matches
+      - Auth header: X-Auth-Token
+    """
+    headers = {"X-Auth-Token": token, "Accept": "application/json"}
+    competition = os.environ.get("FOOTBALL_DATA_COMPETITION") or "WC"
+    url = f"{FOOTBALLDATA_BASE}/competitions/{competition}/matches"
+    print(f"[fetch_results] GET {url}")
+
+    try:
+        payload = http_get_json(url, headers)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try: body = e.read().decode("utf-8")[:200]
+        except Exception: pass
+        print(f"[fetch_results] football-data.org HTTP {e.code}: {body}")
+        return []
+    except Exception as e:
+        print(f"[fetch_results] football-data.org fetch failed: {type(e).__name__}: {e}")
+        return []
+
+    matches_raw = payload.get("matches", []) or []
+    print(f"[fetch_results] football-data.org returned {len(matches_raw)} matches")
+
+    if dry_run:
+        status_dist: dict[str, int] = {}
+        for m in matches_raw:
+            s = m.get("status", "?")
+            status_dist[s] = status_dist.get(s, 0) + 1
+        print(f"[dry-run] status distribution: {status_dist}")
+        for m in matches_raw[:5]:
+            home = (m.get("homeTeam") or {}).get("name", "?")
+            away = (m.get("awayTeam") or {}).get("name", "?")
+            print(f"  fixture: {m.get('utcDate', '?')[:16]} {home} vs {away}  status={m.get('status')}")
+
+    fixture_map = load_fixture_map() or {}
+    cfg = json.loads((RAW / "wc2026_config.json").read_text())
+    schedule = cfg["group_stage_schedule"]
+    schedule_by_id = {f["m"]: f for f in schedule}
+
+    out: list[dict] = []
+    unmapped: list[dict] = []
+    for m in matches_raw:
+        provider_id = str(m.get("id", ""))
+        home = normalize_team((m.get("homeTeam") or {}).get("name", ""))
+        away = normalize_team((m.get("awayTeam") or {}).get("name", ""))
+        date = (m.get("utcDate") or "")[:10]
+        raw_status = m.get("status", "")
+        canon_status = FOOTBALLDATA_STATUS_MAP.get(raw_status, raw_status)
+        score = m.get("score") or {}
+        full_time = score.get("fullTime") or {}
+        extra_time = score.get("extraTime") or {}
+        penalties = score.get("penalties") or {}
+
+        # Resolve to our match id
+        m_id = fixture_map.get(provider_id)
+        if m_id is None:
+            from datetime import date as _date, timedelta as _td
+            try:
+                d0 = _date.fromisoformat(date)
+                date_window = {d0.isoformat(),
+                               (d0 - _td(days=1)).isoformat(),
+                               (d0 + _td(days=1)).isoformat()}
+            except Exception:
+                date_window = {date}
+            cand = next((s for s in schedule
+                         if s["date"] in date_window
+                         and s["home"] == home and s["away"] == away), None)
+            if cand:
+                m_id = cand["m"]
+
+        if m_id is None:
+            unmapped.append({"id": provider_id, "home": home, "away": away,
+                             "date": date, "status": raw_status})
+            continue
+        sched = schedule_by_id.get(m_id)
+        if not sched:
+            continue
+
+        # Choose the right "final" goals: if AET/PEN was reached, use that;
+        # otherwise plain fullTime.
+        gh, ga = full_time.get("home"), full_time.get("away")
+        # Distinguish AET / PEN by which sub-score is populated
+        eff_status = canon_status
+        if canon_status == "FT":
+            if penalties.get("home") is not None or penalties.get("away") is not None:
+                eff_status = "PEN"
+            elif extra_time.get("home") is not None or extra_time.get("away") is not None:
+                eff_status = "AET"
+                # AET goals are commonly the cumulative score at end of ET → fullTime already holds it
+        if eff_status in LOCKED_STATUSES and (gh is None or ga is None):
+            print(f"[fetch_results] WARN: M{m_id} status={raw_status} but score missing — skipping")
+            continue
+
+        out.append({
+            "m": int(m_id),
+            "provider_fixture_id": provider_id,
+            "date": sched["date"],
+            "home": sched["home"],
+            "away": sched["away"],
+            "home_score": int(gh) if isinstance(gh, int) else None,
+            "away_score": int(ga) if isinstance(ga, int) else None,
+            "status": eff_status,
+            "status_long": raw_status.replace("_", " ").title(),
+            "elapsed": (m.get("minute") if isinstance(m.get("minute"), int) else None),
+            "source": "football_data",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "raw_status": raw_status,
+        })
+
+    if unmapped:
+        print(f"[fetch_results] {len(unmapped)} unmapped football-data fixtures (likely friendlies)")
+        for u in unmapped[:3]:
+            print(f"  ? {u}")
+
+    return out
+
+
 # ─── PROVIDER: SPORTMONKS (stub) ───────────────────────────────────────────
 def fetch_sportmonks(token: str, dry_run: bool = False) -> list[dict]:
     """Placeholder for Sportmonks. See fetch_api_football for the pattern."""
@@ -410,6 +562,15 @@ def main() -> int:
                 src = "mock"
             else:
                 matches = fetch_api_football(key, dry_run=args.dry_run)
+        elif src in ("football_data", "footballdata"):
+            token = get_football_data_token()
+            if not token:
+                print("[fetch_results] FOOTBALL_DATA_TOKEN missing; falling back to mock")
+                matches = fetch_mock()
+                src = "mock"
+            else:
+                matches = fetch_football_data(token, dry_run=args.dry_run)
+                src = "football_data"
         elif src == "sportmonks":
             token = get_sportmonks_token()
             if not token:

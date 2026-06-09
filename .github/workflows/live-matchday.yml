@@ -47,8 +47,15 @@ jobs:
       - name: Date gate (skip if outside tournament window)
         id: gate
         run: |
+          # Manual dispatches always run — used for pre-tournament smoke tests.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Manual dispatch — bypassing date gate."
+            exit 0
+          fi
           NOW=$(date -u +%s)
-          START=$(date -u -d '2026-06-11 00:00:00' +%s 2>/dev/null || python -c "import datetime;print(int(datetime.datetime(2026,6,11).timestamp()))")
+          # Start 24h early so the first kickoff is already covered by an active loop.
+          START=$(date -u -d '2026-06-10 00:00:00' +%s 2>/dev/null || python -c "import datetime;print(int(datetime.datetime(2026,6,10).timestamp()))")
           END=$(date -u -d '2026-07-20 00:00:00' +%s 2>/dev/null || python -c "import datetime;print(int(datetime.datetime(2026,7,20).timestamp()))")
           if [ $NOW -lt $START ] || [ $NOW -gt $END ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -81,10 +88,13 @@ jobs:
           WC_RESULTS_SOURCE: ${{ steps.provider.outputs.provider }}
           API_FOOTBALL_KEY:  ${{ secrets.API_FOOTBALL_KEY }}
           WC_APIFOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          WC_FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
           SPORTMONKS_TOKEN: ${{ secrets.SPORTMONKS_TOKEN }}
           WC_SPORTMONKS_TOKEN: ${{ secrets.SPORTMONKS_TOKEN }}
           API_FOOTBALL_LEAGUE_ID: ${{ vars.API_FOOTBALL_LEAGUE_ID }}
           API_FOOTBALL_SEASON: ${{ vars.API_FOOTBALL_SEASON }}
+          FOOTBALL_DATA_COMPETITION: ${{ vars.FOOTBALL_DATA_COMPETITION }}
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python scripts/live/run_live_update.py --dry-run
