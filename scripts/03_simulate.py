@@ -234,6 +234,44 @@ def resolve_knockout(mat_90, lam_h, lam_a, elo_h, elo_a, cfg, rng):
         return h, a + 1, "pens"
 
 
+def decide_knockout(team_a, team_b, m_num, locked, mat, lam_h, lam_a, e_h, e_a, cfg, rng):
+    """Return (home_score, away_score, winner_name) for one knockout match.
+
+    A.3: collapses post-tournament uncertainty by using the REAL result for
+    locked knockout matches (FT/AET/PEN) instead of re-simulating them.
+    Without this, completed knockouts get re-sampled every Monte Carlo
+    iteration — the simulator pretends Spain might lose to Slovakia 1000
+    times after the match already happened.
+
+    Locked-match handling:
+      - The `winner` field stored by fetch_results (A.2) is the source of
+        truth — it correctly reflects shootout outcomes that score
+        comparison alone can't decode (0-0 (3-0 pens) reads as 0-0).
+      - Score comparison is the fallback only when `winner` is missing,
+        which shouldn't happen for a real knockout but is defensive.
+
+    `locked` is the {match_num: completed_record} dict from
+    load_completed_matches(). `m_num` is the FIFA match number (73-104).
+    """
+    if m_num in locked:
+        lk = locked[m_num]
+        h = lk["home_score"]
+        a = lk["away_score"]
+        w = lk.get("winner")
+        if w == "home":
+            return h, a, team_a
+        if w == "away":
+            return h, a, team_b
+        # No winner field on a locked knockout — fall back to score comparison.
+        # In practice fetch_results refuses to lock a PEN match without a
+        # winner (see A.2), so this path triggers only for group-stage drafts
+        # accidentally indexed here.
+        return h, a, (team_a if h > a else team_b)
+    # Not locked — sample as before.
+    h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
+    return h, a, (team_a if h > a else team_b)
+
+
 # ---------- Annex C lookup --------------------------------------------------
 def lookup_third_place_assignment(qualifying_thirds, annex_c_table):
     """Given the 8 qualifying third-placers, look up their R32 slot assignment."""
@@ -280,6 +318,11 @@ def run_single_seed(seed, cfg, n_sims, ctx):
     group_matrices = ctx["group_matrices"]
     knock_matrices = ctx["knock_matrices"]
     knock_lambdas = ctx["knock_lambdas"]
+    # A.3: locked knockout results (M73-M104). Each entry is the dict from
+    # load_completed_matches with {home_score, away_score, home_pens,
+    # away_pens, winner, status}. Used by decide_knockout() to skip the
+    # Monte Carlo sample for matches that have already happened.
+    locked_knockouts = ctx.get("completed_matches", {}) or {}
 
     for sim in range(n_sims):
         # --- Sample all 72 group scorelines (locked if completed in live mode) ---
@@ -348,13 +391,17 @@ def run_single_seed(seed, cfg, n_sims, ctx):
             r32_fixtures.append({"m": s["m"], "team_a": t_a, "team_b": t_b})
 
         # --- Play R32 ---
+        # A.3: decide_knockout() short-circuits to the locked real result
+        # when ctx.completed_matches has the m_num, otherwise samples as
+        # before. Group-stage Monte Carlo for the same n_sims still produces
+        # the right uncertainty band for OTHER possible bracket paths.
         winners_by_match = {}
         for f in r32_fixtures:
             ta, tb = f["team_a"], f["team_b"]
             mat = knock_matrices[(ta, tb)]
             lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-            h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-            winner = ta if h > a else tb
+            h, a, winner = decide_knockout(ta, tb, f["m"], locked_knockouts,
+                                           mat, lam_h, lam_a, e_h, e_a, cfg, rng)
             winners_by_match[f["m"]] = winner
             r16_count[winner] += 1
 
@@ -365,8 +412,8 @@ def run_single_seed(seed, cfg, n_sims, ctx):
             ta, tb = winners_by_match[ma], winners_by_match[mb]
             mat = knock_matrices[(ta, tb)]
             lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-            h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-            winner = ta if h > a else tb
+            h, a, winner = decide_knockout(ta, tb, f["match_num"], locked_knockouts,
+                                           mat, lam_h, lam_a, e_h, e_a, cfg, rng)
             r16_winners[f["match_num"]] = winner
             qf_count[winner] += 1
 
@@ -377,8 +424,8 @@ def run_single_seed(seed, cfg, n_sims, ctx):
             ta, tb = r16_winners[ma], r16_winners[mb]
             mat = knock_matrices[(ta, tb)]
             lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-            h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-            winner = ta if h > a else tb
+            h, a, winner = decide_knockout(ta, tb, f["match_num"], locked_knockouts,
+                                           mat, lam_h, lam_a, e_h, e_a, cfg, rng)
             qf_winners[f["match_num"]] = winner
             semi_count[winner] += 1
 
@@ -390,8 +437,8 @@ def run_single_seed(seed, cfg, n_sims, ctx):
             ta, tb = qf_winners[ma], qf_winners[mb]
             mat = knock_matrices[(ta, tb)]
             lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-            h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-            winner = ta if h > a else tb
+            h, a, winner = decide_knockout(ta, tb, f["match_num"], locked_knockouts,
+                                           mat, lam_h, lam_a, e_h, e_a, cfg, rng)
             loser = tb if winner == ta else ta
             sf_winners[f["match_num"]] = winner
             sf_losers[f["match_num"]] = loser
@@ -403,8 +450,8 @@ def run_single_seed(seed, cfg, n_sims, ctx):
         ta, tb = sf_winners[ma], sf_winners[mb]
         mat = knock_matrices[(ta, tb)]
         lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-        h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-        champion = ta if h > a else tb
+        h, a, champion = decide_knockout(ta, tb, final["match_num"], locked_knockouts,
+                                         mat, lam_h, lam_a, e_h, e_a, cfg, rng)
         champion_count[champion] += 1
 
         # --- 3rd place ---
@@ -413,8 +460,8 @@ def run_single_seed(seed, cfg, n_sims, ctx):
         tb = sf_losers[int(tp["slot_b"][1:])]
         mat = knock_matrices[(ta, tb)]
         lam_h, lam_a, e_h, e_a = knock_lambdas[(ta, tb)]
-        h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
-        tp_winner = ta if h > a else tb
+        h, a, tp_winner = decide_knockout(ta, tb, tp["match_num"], locked_knockouts,
+                                          mat, lam_h, lam_a, e_h, e_a, cfg, rng)
         third_place_winners[tp_winner] += 1
 
     return {
@@ -500,13 +547,26 @@ def load_injury_adjustments(path):
 
 
 def load_completed_matches(path):
-    """Read results_2026.json, return {match_num: {home_score, away_score}}."""
+    """Read results_2026.json, return {match_num: completed_record}.
+
+    A.3: also captures `home_pens`, `away_pens`, and `winner` so the
+    simulator can lock knockout matches correctly. For group fixtures
+    these fields are None and behavior is unchanged. For knockouts,
+    `winner` ("home"/"away") is the source of truth — see decide_knockout().
+    """
     if not path.exists():
         return {}
     d = json.loads(path.read_text())
     out = {}
     for m in d.get("completed_matches", []):
-        out[m["m"]] = {"home_score": m["home_score"], "away_score": m["away_score"]}
+        out[m["m"]] = {
+            "home_score": m["home_score"],
+            "away_score": m["away_score"],
+            "home_pens": m.get("home_pens"),
+            "away_pens": m.get("away_pens"),
+            "winner": m.get("winner"),
+            "status": m.get("status"),
+        }
     return out
 
 
@@ -629,6 +689,10 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
         "all_teams": all_teams, "group_matrices": group_matrices,
         "knock_matrices": knock_matrices, "knock_lambdas": knock_lambdas,
         "slot_pools": slot_pools,
+        # A.3: knockout-aware locked-results lookup. Group fixtures already
+        # get locked via group_matrices[i]["locked_score"] at line ~599;
+        # knockouts are looked up by match_num inside run_single_seed.
+        "completed_matches": completed_matches,
     }
 
 
