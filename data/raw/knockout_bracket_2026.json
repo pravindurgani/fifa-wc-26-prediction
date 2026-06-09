@@ -1,0 +1,253 @@
+{
+  "r32_slots": [
+    {
+      "match_num": 73,
+      "slot_a": "2A",
+      "slot_b": "2B",
+      "date": "2026-06-28",
+      "venue": "Inglewood, CA",
+      "next_match": 90
+    },
+    {
+      "match_num": 74,
+      "slot_a": "1E",
+      "slot_b": "3A/B/C/D/F",
+      "date": "2026-06-29",
+      "venue": "Foxborough, MA",
+      "next_match": 89
+    },
+    {
+      "match_num": 75,
+      "slot_a": "1F",
+      "slot_b": "2C",
+      "date": "2026-06-29",
+      "venue": "Guadalupe, Mexico",
+      "next_match": 90
+    },
+    {
+      "match_num": 76,
+      "slot_a": "1C",
+      "slot_b": "2F",
+      "date": "2026-06-29",
+      "venue": "Houston, TX",
+      "next_match": 91
+    },
+    {
+      "match_num": 77,
+      "slot_a": "1I",
+      "slot_b": "3C/D/F/G/H",
+      "date": "2026-06-30",
+      "venue": "East Rutherford, NJ",
+      "next_match": 89
+    },
+    {
+      "match_num": 78,
+      "slot_a": "2E",
+      "slot_b": "2I",
+      "date": "2026-06-30",
+      "venue": "Arlington, TX",
+      "next_match": 91
+    },
+    {
+      "match_num": 79,
+      "slot_a": "1A",
+      "slot_b": "3C/E/F/H/I",
+      "date": "2026-06-30",
+      "venue": "Mexico City",
+      "next_match": 92
+    },
+    {
+      "match_num": 80,
+      "slot_a": "1L",
+      "slot_b": "3E/H/I/J/K",
+      "date": "2026-07-01",
+      "venue": "Atlanta, GA",
+      "next_match": 92
+    },
+    {
+      "match_num": 81,
+      "slot_a": "1D",
+      "slot_b": "3B/E/F/I/J",
+      "date": "2026-07-01",
+      "venue": "Santa Clara, CA",
+      "next_match": 94
+    },
+    {
+      "match_num": 82,
+      "slot_a": "1G",
+      "slot_b": "3A/E/H/I/J",
+      "date": "2026-07-01",
+      "venue": "Seattle, WA",
+      "next_match": 94
+    },
+    {
+      "match_num": 83,
+      "slot_a": "2K",
+      "slot_b": "2L",
+      "date": "2026-07-02",
+      "venue": "Toronto",
+      "next_match": 93
+    },
+    {
+      "match_num": 84,
+      "slot_a": "1H",
+      "slot_b": "2J",
+      "date": "2026-07-02",
+      "venue": "Inglewood, CA",
+      "next_match": 93
+    },
+    {
+      "match_num": 85,
+      "slot_a": "1B",
+      "slot_b": "3E/F/G/I/J",
+      "date": "2026-07-02",
+      "venue": "Vancouver",
+      "next_match": 96
+    },
+    {
+      "match_num": 86,
+      "slot_a": "1J",
+      "slot_b": "2H",
+      "date": "2026-07-03",
+      "venue": "Miami Gardens, FL",
+      "next_match": 95
+    },
+    {
+      "match_num": 87,
+      "slot_a": "1K",
+      "slot_b": "3D/E/I/J/L",
+      "date": "2026-07-03",
+      "venue": "Kansas City, MO",
+      "next_match": 96
+    },
+    {
+      "match_num": 88,
+      "slot_a": "2D",
+      "slot_b": "2G",
+      "date": "2026-07-03",
+      "venue": "Arlington, TX",
+      "next_match": 95
+    }
+  ],
+  "r16_bracket": [
+    {
+      "match_num": 89,
+      "slot_a": "W74",
+      "slot_b": "W77",
+      "date": "2026-07-04",
+      "venue": "Philadelphia, PA"
+    },
+    {
+      "match_num": 90,
+      "slot_a": "W73",
+      "slot_b": "W75",
+      "date": "2026-07-04",
+      "venue": "Houston, TX"
+    },
+    {
+      "match_num": 91,
+      "slot_a": "W76",
+      "slot_b": "W78",
+      "date": "2026-07-05",
+      "venue": "East Rutherford, NJ"
+    },
+    {
+      "match_num": 92,
+      "slot_a": "W79",
+      "slot_b": "W80",
+      "date": "2026-07-05",
+      "venue": "Mexico City"
+    },
+    {
+      "match_num": 93,
+      "slot_a": "W83",
+      "slot_b": "W84",
+      "date": "2026-07-06",
+      "venue": "Arlington, TX"
+    },
+    {
+      "match_num": 94,
+      "slot_a": "W81",
+      "slot_b": "W82",
+      "date": "2026-07-06",
+      "venue": "Seattle, WA"
+    },
+    {
+      "match_num": 95,
+      "slot_a": "W86",
+      "slot_b": "W88",
+      "date": "2026-07-07",
+      "venue": "Atlanta, GA"
+    },
+    {
+      "match_num": 96,
+      "slot_a": "W85",
+      "slot_b": "W87",
+      "date": "2026-07-07",
+      "venue": "Vancouver"
+    }
+  ],
+  "qf_bracket": [
+    {
+      "match_num": 97,
+      "slot_a": "W89",
+      "slot_b": "W90",
+      "date": "2026-07-09",
+      "venue": "Foxborough, MA"
+    },
+    {
+      "match_num": 98,
+      "slot_a": "W93",
+      "slot_b": "W94",
+      "date": "2026-07-10",
+      "venue": "Inglewood, CA"
+    },
+    {
+      "match_num": 99,
+      "slot_a": "W91",
+      "slot_b": "W92",
+      "date": "2026-07-11",
+      "venue": "Miami Gardens, FL"
+    },
+    {
+      "match_num": 100,
+      "slot_a": "W95",
+      "slot_b": "W96",
+      "date": "2026-07-11",
+      "venue": "Kansas City, MO"
+    }
+  ],
+  "sf_bracket": [
+    {
+      "match_num": 101,
+      "slot_a": "W97",
+      "slot_b": "W98",
+      "date": "2026-07-14",
+      "venue": "Arlington, TX"
+    },
+    {
+      "match_num": 102,
+      "slot_a": "W99",
+      "slot_b": "W100",
+      "date": "2026-07-15",
+      "venue": "Atlanta, GA"
+    }
+  ],
+  "final_and_third_place": {
+    "third_place": {
+      "match_num": 103,
+      "date": "2026-07-18",
+      "venue": "Miami Gardens, FL",
+      "slot_a": "L101",
+      "slot_b": "L102"
+    },
+    "final": {
+      "match_num": 104,
+      "date": "2026-07-19",
+      "venue": "East Rutherford, NJ",
+      "slot_a": "W101",
+      "slot_b": "W102"
+    }
+  },
+  "source": "FIFA official schedule (Nov 2025 release) + Annex C third-place table"
+}

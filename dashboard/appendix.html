@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Technical Appendix — World Cup 2026 Simulator</title>
+  <meta name="description" content="Full mathematical specification of the FIFA World Cup 2026 prediction model: Negative Binomial goal model, Dixon-Coles correction, Annex C lookup, Monte Carlo configuration, calibration, walk-forward, ablation, sensitivity." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="methodology.css" />
+  <link rel="stylesheet" href="appendix.css" />
+  <script>
+    (function() {
+      const stored = localStorage.getItem('wc26-theme');
+      const sys = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = stored || sys;
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>Technical Appendix <span class="ver-pill">v3</span></h1>
+          <span class="tag">For analysts, modellers, and the maths-inclined</span>
+        </div>
+      </div>
+      <div class="top-controls">
+        <a href="index.html"><button>← Dashboard</button></a>
+        <a href="methodology.html"><button>Methodology</button></a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container method-main appendix-main">
+
+    <section class="appendix-intro">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      <div>
+        <strong>This appendix is for analysts and modellers.</strong>
+        It documents the goal model, Monte Carlo configuration, calibration, walk-forward backtests,
+        sensitivity audit, data schema, reproduction steps, and limitations.
+        If you just want the plain-English version, read the <a href="methodology.html">Methodology</a>.
+      </div>
+    </section>
+
+    <nav class="appendix-toc" aria-label="Appendix sections">
+      <strong>On this page:</strong>
+      <a href="#goal-model">Goal model</a>
+      <a href="#bracket">Bracket &amp; tiebreakers</a>
+      <a href="#monte-carlo">Monte Carlo</a>
+      <a href="#metrics">Calibration &amp; metrics</a>
+      <a href="#sensitivity">Sensitivity</a>
+      <a href="#reproduce">Reproducibility</a>
+      <a href="#schema">Data schema</a>
+      <a href="#downloads">Downloads</a>
+      <a href="#limits">Known limits</a>
+    </nav>
+
+    <section class="explain" id="goal-model">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      </div>
+      <div>
+        <h2>Goal model</h2>
+        <p>Two XGBoost Poisson regressors predict expected goals per side:</p>
+        <pre class="eqn">λ_home = f_H(elo_h, elo_a, fifa_h, fifa_a, host_h, alt, climate, travel_h, rest_h, squad_h, …)
+λ_away = f_A(elo_h, elo_a, fifa_h, fifa_a, host_a, alt, climate, travel_a, rest_a, squad_a, …)</pre>
+        <p>Each regressor is trained on 27,000+ post-1990 international matches (poisson objective, early-stopping on a holdout slice).</p>
+
+        <h3 class="apx-sub">Negative Binomial parameterisation</h3>
+        <p>To handle the over-dispersion in real football scorelines (variance &gt; mean), the marginal goal distribution is Negative Binomial:</p>
+        <pre class="eqn">G ~ NB(λ, φ)         (mean = λ, variance = λ + λ²/φ)
+P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
+        <p>The dispersion parameter φ is tuned on the training set; current value: <code>φ ≈ 8.5</code> (where φ → ∞ reduces to Poisson). The sensitivity audit varies φ across <code>[6, 12]</code>.</p>
+
+        <h3 class="apx-sub">Dixon-Coles τ correction</h3>
+        <p>The independent-marginals product under-predicts low-score draws and over-predicts 1-0 / 0-1. The Dixon-Coles correction multiplies the joint pmf on the four affected cells:</p>
+        <pre class="eqn">P(h, a) := P(H=h) · P(A=a) · τ(h, a, λ_h, λ_a, ρ)
+
+τ(0, 0) = 1 − λ_h λ_a ρ
+τ(0, 1) = 1 + λ_h ρ
+τ(1, 0) = 1 + λ_a ρ
+τ(1, 1) = 1 − ρ
+τ(h, a) = 1   otherwise</pre>
+        <p>Calibrated on training data, current value: <code>ρ = −0.13</code>. The full joint matrix is then re-normalised. Sensitivity varies ρ across <code>[−0.18, −0.08]</code>.</p>
+
+        <h3 class="apx-sub">Per-match λ noise (Gamma multiplier)</h3>
+        <p>Beyond NB dispersion, each simulation pass draws a Gamma multiplier for each side to capture "off days" / "purple patches":</p>
+        <pre class="eqn">α ~ Gamma(k=σ⁻², θ=σ²)        E[α] = 1, Var[α] = σ²
+λ_sim = λ · α</pre>
+        <p>Current <code>σ ≈ 0.20</code> (≈ 20% per-match relative noise). This is what turns identical λ values into the realistic 14–18pp spread of W/D/L probabilities seen in the live match cards.</p>
+      </div>
+    </section>
+
+    <section class="explain" id="bracket">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 8h10v2a5 5 0 0 1-10 0V8z"/><path d="M17 8h2.5a2.5 2.5 0 0 0 0-5H17"/><path d="M7 8H4.5a2.5 2.5 0 0 1 0-5H7"/></svg>
+      </div>
+      <div>
+        <h2>Bracket &amp; tiebreakers</h2>
+        <p>2026 is the first 48-team World Cup. FIFA published the deterministic Round-of-32 bracket in advance (which group-position fills which slot); the 8-best-third-placer slot assignment uses FIFA's <strong>Annex C lookup table</strong> — 495 rows covering every possible combination of the 8 qualifying-group identities.</p>
+
+        <h3 class="apx-sub">Group tiebreaker cascade (per simulation)</h3>
+        <ol class="walkthrough small-walk">
+          <li>Most points</li>
+          <li>Best goal difference</li>
+          <li>Most goals scored</li>
+          <li>Head-to-head points among tied teams</li>
+          <li>Head-to-head goal difference</li>
+          <li>Head-to-head goals scored</li>
+          <li>Fair-play points (approximated as zero in simulation)</li>
+          <li>FIFA World Ranking (new in 2026 — replaces drawing of lots)</li>
+        </ol>
+        <p>The pre-launch validator asserts <code>annex_c_misses == 0</code> across the production run.</p>
+      </div>
+    </section>
+
+    <section class="explain" id="monte-carlo">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+      </div>
+      <div>
+        <h2>Monte Carlo configuration</h2>
+        <ul>
+          <li><strong>Seeds:</strong> 5 independent RNGs (NumPy <code>PCG64</code>, seeded deterministically). Cross-seed variance is reported as the 95% CI for every aggregate probability.</li>
+          <li><strong>Sims per seed:</strong> 5,000 → 25,000 total tournaments. Per-team SE on champion probability ≈ <code>√(p(1-p)/25000)</code> ≤ 0.32pp at the 50% level.</li>
+          <li><strong>Knockout overtime:</strong> if tied at 90', play extra time with halved λ (15-min halves); if still tied, penalty shootout sampled with team-specific shootout slope (calibrated on historic finals).</li>
+          <li><strong>Travel + venue:</strong> per-match effective Elo = base Elo + host boost − travel penalty − altitude penalty − heat penalty + form decay + squad-value prior. All inputs are pre-computed once per tournament; only the goal sample is stochastic.</li>
+          <li><strong>Live mode:</strong> with <code>--live</code>, completed matches are locked verbatim (their realised goals enter the goal-difference / head-to-head accounting); remaining matches simulate as normal.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="explain" id="metrics">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+      </div>
+      <div>
+        <h2>Calibration &amp; performance metrics</h2>
+
+        <h3 class="apx-sub">Holdout (4,839 unseen modern matches)</h3>
+        <table class="tbl apx-tbl">
+          <thead><tr><th>Metric</th><th class="num">Model</th><th class="num">Elo-only</th><th class="num">Naive (33/33/33)</th></tr></thead>
+          <tbody>
+            <tr><td>Log-loss</td><td class="num">0.869</td><td class="num">0.908</td><td class="num">1.055</td></tr>
+            <tr><td>Brier</td><td class="num">0.511</td><td class="num">0.535</td><td class="num">0.667</td></tr>
+            <tr><td>Top-1 accuracy</td><td class="num">60.2%</td><td class="num">55.4%</td><td class="num">48.1%</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="apx-sub">Walk-forward backtest</h3>
+        <p>Each test World Cup is run with only training data <em>strictly older</em> than that tournament (no peeking). All hyperparameters tuned once on pre-2010 data.</p>
+        <table class="tbl apx-tbl">
+          <thead><tr><th>WC</th><th class="num">N</th><th class="num">Log-loss</th><th class="num">Brier</th><th class="num">Acc</th><th class="num">Lift vs Elo</th></tr></thead>
+          <tbody id="apx-wf"><tr><td colspan="6" class="muted small">Loading walk_forward.json…</td></tr></tbody>
+        </table>
+
+        <h3 class="apx-sub">Feature ablation</h3>
+        <table class="tbl apx-tbl">
+          <thead><tr><th>Configuration</th><th class="num">Log-loss</th><th class="num">Brier</th><th class="num">Accuracy</th></tr></thead>
+          <tbody id="apx-abl"><tr><td colspan="4" class="muted small">Loading ablation.json…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="explain" id="sensitivity">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16h6"/><path d="M21 12.5V16"/><path d="M22 12.5V21a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h14"/><path d="m18 3 4 4-4 4"/><path d="M22 7H10"/></svg>
+      </div>
+      <div>
+        <h2>Sensitivity audit (22 scenarios)</h2>
+        <p>Every hand-coded assumption was varied across the ranges below. Each scenario is a full 5×5,000 re-run.</p>
+        <table class="tbl apx-tbl">
+          <thead><tr><th>Parameter</th><th class="num">Default</th><th class="num">Tested range</th></tr></thead>
+          <tbody>
+            <tr><td>Host-country Elo boost</td><td class="num">+50</td><td class="num">[+30, +70]</td></tr>
+            <tr><td>Sister-host boost</td><td class="num">+15</td><td class="num">[+5, +25]</td></tr>
+            <tr><td>Altitude penalty (Mexico City)</td><td class="num">−25</td><td class="num">[−15, −40]</td></tr>
+            <tr><td>Heat penalty (very-hot venues)</td><td class="num">−15</td><td class="num">[−5, −25]</td></tr>
+            <tr><td>Travel penalty per 1,000 km</td><td class="num">−4 Elo</td><td class="num">[−2, −7]</td></tr>
+            <tr><td>Squad-value Elo cap</td><td class="num">±10</td><td class="num">[±5, ±20]</td></tr>
+            <tr><td>Time-decay half-life</td><td class="num">180 days</td><td class="num">[120, 365]</td></tr>
+            <tr><td>NB dispersion φ</td><td class="num">8.5</td><td class="num">[6, 12]</td></tr>
+            <tr><td>Dixon-Coles ρ</td><td class="num">−0.13</td><td class="num">[−0.18, −0.08]</td></tr>
+            <tr><td>λ-noise σ</td><td class="num">0.20</td><td class="num">[0.10, 0.30]</td></tr>
+            <tr><td>Penalty-shootout slope</td><td class="num">0.30</td><td class="num">[0.20, 0.45]</td></tr>
+          </tbody>
+        </table>
+        <p><strong>Top-team ranges from latest sensitivity run:</strong></p>
+        <table class="tbl apx-tbl">
+          <thead><tr><th>Team</th><th class="num">Mean</th><th class="num">Min</th><th class="num">Max</th><th class="num">Range</th></tr></thead>
+          <tbody id="apx-sens"><tr><td colspan="5" class="muted small">Loading sensitivity.json…</td></tr></tbody>
+        </table>
+        <p class="muted small">Top-6 rank ordering is identical across all 22 scenarios.</p>
+      </div>
+    </section>
+
+    <section class="explain" id="reproduce">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+      </div>
+      <div>
+        <h2>Reproducibility</h2>
+        <p>To rerun the full pipeline from a fresh clone:</p>
+        <pre class="eqn">git clone &lt;repo-url&gt; fifa-wc-26-prediction
+cd fifa-wc-26-prediction
+
+# 1. Environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Data preparation + Elo
+python scripts/01_prepare_data.py
+
+# 3. Train goal model (≈ 45 s on M-series laptop)
+python scripts/02_goal_model.py
+
+# 4. Evaluation suite
+python scripts/04_evaluate.py
+python scripts/06_ablation.py
+python scripts/07_walk_forward.py
+python scripts/05_sensitivity.py           # slowest — ≈ 5 min for 22 scenarios
+
+# 5. Production simulations
+python scripts/03_simulate.py --no-travel --out predictions_no_travel.json --seeds 5 --sims 5000
+python scripts/03_simulate.py --seeds 5 --sims 5000        # ≈ 30 s
+python scripts/08_travel_impact.py
+
+# 6. Sync artefacts to dashboard
+cp data/processed/predictions.json data/processed/calibration.json data/processed/travel_impact.json dashboard/
+cp models/walk_forward.json models/ablation.json models/sensitivity.json dashboard/
+
+# 7. Pre-launch validation — must pass before publishing
+python scripts/09_validate.py
+
+# 8. Serve locally
+cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
+        <p>Seeds are fixed (<code>seed_0=42, seed_1=43, …</code>) — rerunning the simulator with identical inputs reproduces the same probabilities to within floating-point precision. The walk-forward backtest is the strictest reproducibility test: it trains on pre-WC-year data only and tests on the held-out tournament.</p>
+      </div>
+    </section>
+
+    <section class="explain" id="schema">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+      </div>
+      <div>
+        <h2>Data schema — <code>predictions.json</code></h2>
+        <pre class="eqn">{
+  "generated_at":          ISO-8601 UTC,
+  "n_simulations_total":   25000,
+  "n_seeds":               5,
+  "n_simulations_per_seed":5000,
+
+  "team_predictions": [{
+    "team":               str,
+    "group":              str (A–L),
+    "elo":                float,
+    "fifa_pts":           float,
+    "squad_value_eur_m":  float,
+    "p_advance_groups":   [0,1],
+    "p_reach_r16":        [0,1],
+    "p_reach_qf":         [0,1],
+    "p_reach_sf":         [0,1],
+    "p_reach_final":      [0,1],
+    "p_champion":         [0,1],
+    "p_third_place":      [0,1],
+    "p_champion_p05":     [0,1],   // 5th percentile across seeds
+    "p_champion_p95":     [0,1],   // 95th percentile across seeds
+    "p_finish_1st_group": [0,1],
+    "p_finish_2nd_group": [0,1],
+    "p_finish_3rd_group": [0,1],
+    "p_finish_4th_group": [0,1]
+  }, ...],
+
+  "match_predictions": [{
+    "m":                  int (1–72),
+    "date":               YYYY-MM-DD,
+    "time":               HH:MM (local kickoff),
+    "group":              str,
+    "home":               str,
+    "away":               str,
+    "venue":              str,
+    "venue_country":      str,
+    "altitude_m":         int,
+    "climate":            "mild" | "hot" | "very_hot" | "high_altitude_*",
+    "lam_home":           float,  // mean expected goals
+    "lam_away":           float,
+    "p_home_win":         [0,1],
+    "p_draw":             [0,1],
+    "p_away_win":         [0,1],
+    "elo_home":           float,
+    "elo_away":           float,
+    "effective_elo_home": float,  // base Elo + boosts − penalties
+    "effective_elo_away": float,
+    "home_travel_km":     float,
+    "away_travel_km":     float,
+    "home_rest_days":     int,
+    "away_rest_days":     int,
+    "home_travel_penalty":float,   // Elo points
+    "away_travel_penalty":float,
+    "locked_score":       null | "H-A"
+  }, ...],
+
+  "concentration":   { top1_champion_p, top2_combined, top5_combined },
+  "annex_c_misses":  0,
+  "live_mode":       bool,
+  "completed_matches": int
+}</pre>
+      </div>
+    </section>
+
+    <section class="explain" id="downloads">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </div>
+      <div>
+        <h2>Raw data downloads</h2>
+        <p>All artefacts are static JSON. They are the same files the dashboard reads — no server, no auth, no rate limits.</p>
+        <ul class="apx-dl-list">
+          <li><a href="./predictions.json" download><code>predictions.json</code></a> — team + match probabilities with 95% CIs</li>
+          <li><a href="./predictions_live.json" download><code>predictions_live.json</code></a> — live-mode rerun with locked completed matches</li>
+          <li><a href="./calibration.json" download><code>calibration.json</code></a> — predicted-vs-actual bins on 4,839 unseen matches</li>
+          <li><a href="./walk_forward.json" download><code>walk_forward.json</code></a> — backtest on WC 2010/14/18/22</li>
+          <li><a href="./ablation.json" download><code>ablation.json</code></a> — feature ablation log-loss + accuracy</li>
+          <li><a href="./sensitivity.json" download><code>sensitivity.json</code></a> — 22-scenario hyper-parameter audit</li>
+          <li><a href="./travel_impact.json" download><code>travel_impact.json</code></a> — champion-prob diff with/without travel penalty</li>
+          <li><a href="./live_state.json" download><code>live_state.json</code></a> — mode, completed count, last-updated timestamp</li>
+          <li><a href="./live_delta.json" download><code>live_delta.json</code></a> — top movers between static and live predictions</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="explain warn" id="limits">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      </div>
+      <div>
+        <h2>Known limitations</h2>
+        <ul>
+          <li><strong>xG features deferred.</strong> International xG data is patchy pre-2017; including it would shrink the training window by two decades.</li>
+          <li><strong>Live injury / lineup feed is manual.</strong> <code>data/live/team_adjustments.json</code> accepts Elo nudges, but API-Football / Sportmonks integration is a future enhancement.</li>
+          <li><strong>Pre-tournament Elo is held static across sims.</strong> Live mode locks completed scorelines but does not yet recompute baseline Elo mid-tournament — that is the next phase.</li>
+          <li><strong>Fair-play points are approximated as zero.</strong> Real implementations need card data per match; collecting it is on the roadmap.</li>
+          <li><strong>Refereeing patterns are not modelled.</strong></li>
+          <li><strong>Weather is bucketed (mild / hot / very_hot / high_altitude_*)</strong> rather than pulled from a forecast API.</li>
+        </ul>
+        <p>These are why no contender exceeds ~25%. The World Cup is structurally an upset machine.</p>
+      </div>
+    </section>
+
+    <section class="cta">
+      <h2>Want the implementation?</h2>
+      <p class="muted small" style="margin: 0 0 18px">All code is in the repo — pipeline scripts <code>01_prepare_data.py</code> through <code>09_validate.py</code>.</p>
+      <a href="index.html" class="cta-button">← Back to the dashboard</a>
+    </section>
+
+  </main>
+
+  <script>
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = cur;
+      localStorage.setItem('wc26-theme', cur);
+    });
+
+    async function loadAppendixData() {
+      const buster = `?t=${Date.now()}`;
+      const opt = (u) => fetch(u + buster).then(r => r.ok ? r.json() : null).catch(() => null);
+
+      const [wf, abl, sens] = await Promise.all([
+        opt('./walk_forward.json'),
+        opt('./ablation.json'),
+        opt('./sensitivity.json'),
+      ]);
+
+      const wfBody = document.getElementById('apx-wf');
+      if (wfBody && wf) {
+        wfBody.innerHTML = Object.entries(wf).map(([yr, r]) =>
+          `<tr><td><strong>${yr}</strong></td>
+           <td class="num">${r.test_n}</td>
+           <td class="num">${r.log_loss.toFixed(3)}</td>
+           <td class="num">${r.brier.toFixed(3)}</td>
+           <td class="num">${(r.accuracy*100).toFixed(1)}%</td>
+           <td class="num" style="color: var(--success)">+${r.lift_vs_baseline.toFixed(3)}</td></tr>`
+        ).join('');
+      }
+
+      const ablBody = document.getElementById('apx-abl');
+      if (ablBody && abl) {
+        const rows = [];
+        for (const [name, m] of Object.entries(abl)) {
+          if (name === 'lift' || name === 'note' || typeof m !== 'object') continue;
+          rows.push(`<tr><td><strong>${name.replace(/_/g, ' ')}</strong></td>
+            <td class="num">${m.log_loss.toFixed(3)}</td>
+            <td class="num">${m.brier.toFixed(3)}</td>
+            <td class="num">${(m.accuracy*100).toFixed(1)}%</td></tr>`);
+        }
+        ablBody.innerHTML = rows.join('');
+      }
+
+      const sensBody = document.getElementById('apx-sens');
+      if (sensBody && sens) {
+        const top = (sens.summary_top12 || []).slice(0, 8);
+        if (top.length) {
+          sensBody.innerHTML = top.map(t => {
+            const mean = (t.mean_champion_p ?? t.mean ?? 0) * 100;
+            const mn   = (t.min ?? 0) * 100;
+            const mx   = (t.max ?? 0) * 100;
+            return `<tr><td><strong>${t.team}</strong></td>
+             <td class="num">${mean.toFixed(1)}%</td>
+             <td class="num">${mn.toFixed(1)}%</td>
+             <td class="num">${mx.toFixed(1)}%</td>
+             <td class="num">${(mx - mn).toFixed(1)}pp</td></tr>`;
+          }).join('');
+        } else {
+          sensBody.innerHTML = `<tr><td colspan="5" class="muted small">No top-team rows in sensitivity.json.</td></tr>`;
+        }
+      }
+    }
+    loadAppendixData();
+  </script>
+</body>
+</html>

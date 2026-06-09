@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>World Cup 2026 Simulator</title>
+  <meta name="description" content="Probabilistic FIFA World Cup 2026 simulator. Official FIFA bracket, Negative Binomial goal model with Dixon-Coles correction, 25,000 Monte Carlo simulations." />
+  <meta name="theme-color" content="#0A0A0B" />
+  <meta property="og:title" content="World Cup 2026 Simulator" />
+  <meta property="og:description" content="48 teams · 104 matches · 25,000 simulations · honest probabilities" />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2v20'/%3E%3Cpath d='m12 12 6 6'/%3E%3Cpath d='m12 12-6 6'/%3E%3C/svg%3E" />
+  <script>
+    (function() {
+      try {
+        const stored = localStorage.getItem('wc26-theme');
+        const sys = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = stored || sys;
+      } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a href="#top" class="brand" aria-label="Home">
+        <span class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 2v20"/>
+            <path d="m12 12 6 6"/>
+            <path d="m12 12-6 6"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-title">World Cup 2026 Simulator</span>
+          <span class="brand-sub">Probabilistic model · 48 teams · 104 matches <span class="ver-pill">v3</span></span>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="Sections">
+        <a href="#storylines">Storylines</a>
+        <a href="#contenders">Contenders</a>
+        <a href="#interesting">Matches</a>
+        <a href="#compare">Compare</a>
+        <a href="#travel">Travel</a>
+        <a href="#robustness">Robustness</a>
+        <a href="methodology.html">Methodology</a>
+        <a href="appendix.html">Appendix</a>
+      </nav>
+      <div class="top-controls">
+        <span class="last-updated" id="last-updated" title="Generated at"></span>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle light/dark theme">
+          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="top">
+
+    <section class="caveat-banner reveal" role="note">
+      <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      <div>
+        <strong>Probabilistic simulator, not a forecast.</strong>
+        Numbers are Monte Carlo frequencies from a calibrated model — they reflect <em>plausible outcomes</em>, not predictions.
+        The World Cup is structurally an upset machine.
+        <a href="methodology.html">Read the methodology</a>.
+      </div>
+    </section>
+
+    <div id="live-status" class="live-status reveal" aria-live="polite"></div>
+
+    <details class="how-to-read reveal">
+      <summary>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+        <span>How to read this dashboard</span>
+        <span class="chevron" aria-hidden="true">▾</span>
+      </summary>
+      <div class="how-to-read-body">
+        <div class="htr-item">
+          <strong>"Spain 24%" is a probability, not a prediction.</strong>
+          It means Spain lifted the trophy in about 24 out of every 100 simulated tournaments — the other 76 saw a different champion.
+        </div>
+        <div class="htr-item">
+          <strong>The simulation range is the uncertainty band.</strong>
+          Multiple independent random seeds gave the same team a champion probability in this range. Tighter bands = more confident estimate.
+        </div>
+        <div class="htr-item">
+          <strong>Calibration measures honesty.</strong>
+          A well-calibrated 70% should win ~70% of the time. We test this on 4,839 unseen historical matches — see the calibration chart.
+        </div>
+        <div class="htr-item">
+          <strong>Robustness is the stress test.</strong>
+          The same simulation is re-run under 22 different parameter assumptions. If the top-6 order survives all of them, the story is real.
+        </div>
+      </div>
+    </details>
+
+    <section class="hero-grid">
+      <div class="card hero-champion reveal">
+        <h3>Most likely champion</h3>
+        <div class="team" id="champ-team">—</div>
+        <div class="prob-row">Won <strong id="champ-prob" data-count="0">—</strong> of simulated tournaments</div>
+        <div class="ci" id="champ-ci"></div>
+      </div>
+      <div class="card stat-card reveal">
+        <h3>Most likely finalist</h3>
+        <div class="stat-val" id="final-team">—</div>
+        <div class="stat-sub" id="final-prob">—</div>
+      </div>
+      <div class="card stat-card reveal">
+        <h3>Dark horse</h3>
+        <div class="stat-val" id="dh-team">—</div>
+        <div class="stat-sub" id="dh-prob">—</div>
+      </div>
+      <div class="card stat-card reveal">
+        <h3>Mode</h3>
+        <div class="stat-val" id="mode-label">—</div>
+        <div class="stat-sub" id="mode-sub">—</div>
+      </div>
+    </section>
+
+    <section class="stats-strip">
+      <div class="card reveal stat-with-desc">
+        <h3>Simulations <span class="stat-info" data-tip="One simulation = one full simulated tournament. We run many to get stable probabilities.">ⓘ</span></h3>
+        <div class="stat-val" id="stat-sims" data-count="0">—</div>
+        <div class="sub" id="stat-sims-sub">—</div>
+        <div class="stat-desc">Each is one full tournament run end-to-end.</div>
+      </div>
+      <div class="card reveal stat-with-desc">
+        <h3>Holdout log-loss <span class="stat-info" data-tip="Penalty score on 4,839 unseen historical matches. Lower means the model is closer to the truth more often.">ⓘ</span></h3>
+        <div class="stat-val" id="stat-logloss">—</div>
+        <div class="sub">Lower is better</div>
+        <div class="stat-desc">Naive baseline ≈ 1.055 · Elo-only ≈ 0.908.</div>
+      </div>
+      <div class="card reveal stat-with-desc">
+        <h3>Holdout accuracy <span class="stat-info" data-tip="How often the model's most-likely outcome (home win / draw / away win) was the actual outcome on unseen matches.">ⓘ</span></h3>
+        <div class="stat-val" id="stat-acc">—</div>
+        <div class="sub">vs always-home ≈ 48%</div>
+        <div class="stat-desc">Top-1 outcome guessed correctly.</div>
+      </div>
+      <div class="card reveal stat-with-desc">
+        <h3>Top-1 concentration <span class="stat-info" data-tip="The favourite's champion probability. Bookmakers historically sit pre-tournament favourites at 15–25%. Higher = the model is overconfident.">ⓘ</span></h3>
+        <div class="stat-val" id="stat-top1">—</div>
+        <div class="sub">Bookmaker range 15–25%</div>
+        <div class="stat-desc">Higher = model overconfident.</div>
+      </div>
+      <div class="card reveal stat-with-desc">
+        <h3>Annex C lookup <span class="stat-info" data-tip="FIFA Regulations Annex C is a 495-row table that decides which group's 3rd-placed team takes which knockout slot. 0 misses = perfect bracket fidelity across every simulation.">ⓘ</span></h3>
+        <div class="stat-val ok" id="stat-misses">—</div>
+        <div class="sub">FIFA-spec exact assignment</div>
+        <div class="stat-desc">0 = perfect bracket fidelity.</div>
+      </div>
+    </section>
+
+    <section id="storylines" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Tournament storylines</h2>
+          <p class="section-desc">Five quick takeaways derived from the simulation — refresh as the model updates.</p>
+        </div>
+      </div>
+      <div id="storylines-grid" class="storylines-grid"></div>
+    </section>
+
+    <section id="movers" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Biggest movers</h2>
+          <p class="section-desc">Champion-probability changes versus the pre-tournament baseline. Activates as matches lock during the tournament.</p>
+        </div>
+      </div>
+      <div id="movers-content" class="card">
+        <!-- Populated by app.js — shows empty state until live mode -->
+      </div>
+    </section>
+
+    <section id="contenders" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Title contenders</h2>
+          <p class="section-desc">Probability of reaching each stage. Click any row in the top 10 for the full "why this team?" breakdown.</p>
+        </div>
+        <div class="section-controls">
+          <button id="toggle-all-teams" class="btn-secondary">Show all 48</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="filter-row">
+          <label class="search-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="search" id="team-search" placeholder="Search team…" autocomplete="off" />
+          </label>
+          <label>Group <select id="team-group"><option value="all">All</option></select></label>
+          <label>Region <select id="team-region">
+            <option value="all">All</option>
+            <option value="UEFA">UEFA</option>
+            <option value="CONMEBOL">CONMEBOL</option>
+            <option value="CONCACAF">CONCACAF</option>
+            <option value="CAF">CAF</option>
+            <option value="AFC">AFC</option>
+            <option value="OFC">OFC</option>
+          </select></label>
+          <button id="contenders-reset" class="btn-ghost">Reset</button>
+          <span class="filter-count" id="contenders-count"></span>
+        </div>
+        <div class="table-wrap sticky-thead">
+          <table id="contenders-table" class="tbl sortable">
+            <thead><tr>
+              <th data-sort="rank">#</th>
+              <th data-sort="team">Team</th>
+              <th class="hide-sm" data-sort="group">Group</th>
+              <th class="num hide-md" data-sort="elo">Elo</th>
+              <th class="num hide-sm" data-sort="fifa_pts">FIFA pts</th>
+              <th class="num hide-sm" data-sort="squad_value_eur_m">Squad €M</th>
+              <th class="num" data-sort="p_advance_groups">Adv</th>
+              <th class="num hide-sm" data-sort="p_reach_r16">R16</th>
+              <th class="num" data-sort="p_reach_qf">QF</th>
+              <th class="num" data-sort="p_reach_sf">SF</th>
+              <th class="num" data-sort="p_reach_final">Final</th>
+              <th class="num hide-sm" data-sort="p_third_place">3rd</th>
+              <th class="num" data-sort="p_champion" data-sort-default="desc">Champion</th>
+            </tr></thead><tbody></tbody>
+          </table>
+        </div>
+        <p class="muted small" style="margin: 12px 0 0">
+          <strong>Tip:</strong> Click any column header to sort. Search by team, or filter by group / region. Click a top-10 row to expand the full breakdown. ·
+          Confederation dots: <span class="legend-dot" style="background: var(--confed-uefa)"></span>UEFA
+          <span class="legend-dot" style="background: var(--confed-conmebol)"></span>CONMEBOL
+          <span class="legend-dot" style="background: var(--confed-caf)"></span>CAF
+          <span class="legend-dot" style="background: var(--confed-concacaf)"></span>CONCACAF
+          <span class="legend-dot" style="background: var(--confed-afc)"></span>AFC
+          <span class="legend-dot" style="background: var(--confed-ofc)"></span>OFC.
+        </p>
+      </div>
+    </section>
+
+    <section id="groups" class="reveal">
+      <h2>Group stage projections</h2>
+      <p class="section-desc">Full FIFA 2026 tiebreaker cascade per simulation: pts → GD → GF → H2H pts → H2H GD → H2H GF → fair-play (approximated as zero) → FIFA ranking. Top 2 + 8 best 3rd-placers advance.</p>
+      <div id="groups-grid" class="groups-grid"></div>
+    </section>
+
+    <section id="interesting" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Most interesting matches</h2>
+          <p class="section-desc">Auto-curated picks from the 72 group-stage fixtures. Click a card to jump to the full match panel.</p>
+        </div>
+      </div>
+      <div id="interesting-grid" class="interesting-grid"></div>
+    </section>
+
+    <section id="matches" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Match predictions</h2>
+          <p class="section-desc">Goal-model expected scorelines for every group fixture. Bars = W/D/L probabilities. λ = expected goals per side.</p>
+        </div>
+        <div class="section-controls match-view-toggle" role="tablist">
+          <button data-view="featured" class="active" role="tab" aria-selected="true">Featured</button>
+          <button data-view="all" role="tab" aria-selected="false">All 72</button>
+        </div>
+      </div>
+
+      <div class="filter-row">
+        <label class="search-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" id="match-search" placeholder="Search team or venue…" autocomplete="off" />
+        </label>
+        <label>Group <select id="f-group"><option value="all">All</option></select></label>
+        <label>Date <select id="f-date"><option value="all">All</option></select></label>
+        <label>Venue <select id="f-venue"><option value="all">All</option></select></label>
+        <label class="toggle-label"><input type="checkbox" id="f-close-only" /> Close only (≤55%)</label>
+        <button id="matches-reset" class="btn-ghost">Reset</button>
+        <span class="filter-count" id="filter-count"></span>
+      </div>
+
+      <div class="chip-row" id="venue-chips">
+        <button class="chip active" data-chip="all">All venues</button>
+        <button class="chip" data-chip="country:United States">USA</button>
+        <button class="chip" data-chip="country:Mexico">Mexico</button>
+        <button class="chip" data-chip="country:Canada">Canada</button>
+        <button class="chip" data-chip="hot">Hot venues</button>
+        <button class="chip" data-chip="altitude">Altitude</button>
+        <button class="chip" data-chip="travel">High travel</button>
+      </div>
+
+      <div id="matches-list" class="matches-grid"></div>
+    </section>
+
+    <section id="compare" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Compare two teams</h2>
+          <p class="section-desc">Pick any two of the 48 teams to put their probabilities, Elo, squad value, and travel side-by-side.</p>
+        </div>
+      </div>
+      <div class="card compare-card">
+        <div class="compare-pickers">
+          <label>Team A <select id="cmp-a"></select></label>
+          <span class="vs-pill">vs</span>
+          <label>Team B <select id="cmp-b"></select></label>
+          <button id="cmp-swap" class="btn-ghost" title="Swap teams">⇄ Swap</button>
+        </div>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+    </section>
+
+    <section id="charts-row" class="reveal">
+      <div class="dual-grid">
+        <div class="card chart-card">
+          <h3>Title probability — top 20</h3>
+          <canvas id="title-chart" height="120"></canvas>
+        </div>
+        <div class="card chart-card">
+          <h3>Title by confederation</h3>
+          <canvas id="confed-chart" height="120"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section id="travel" class="reveal">
+      <h2>Travel impact — geography in 2026</h2>
+      <p class="section-desc">The tournament spans 16 cities across 3 countries — some teams travel 4,500+ km between group matches. We apply a per-km Elo penalty and compare to a no-travel baseline.</p>
+      <div class="travel-grid">
+        <div class="card">
+          <h3>Teams travelling most (group stage)</h3>
+          <ul id="travel-km-list" class="travel-list"></ul>
+        </div>
+        <div class="card">
+          <h3>Champion-prob impact (travel on vs off)</h3>
+          <ul id="travel-delta-list" class="travel-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="calibration" class="reveal">
+      <h2>Calibration — does the model mean what it says?</h2>
+      <p class="section-desc">Predicted 70% home win should match ~70% actual frequency. Dots near the diagonal = trustworthy probabilities. Test set: 4,839 unseen historical matches.</p>
+      <div class="card chart-card tall">
+        <canvas id="cal-chart"></canvas>
+      </div>
+    </section>
+
+    <section id="robustness" class="reveal">
+      <h2>Robustness — backtests and ablation</h2>
+      <p class="section-desc">How well would this model have predicted the past 4 World Cups, using only data available before each one?</p>
+      <div class="dual-grid">
+        <div class="card">
+          <h3>Walk-forward backtest</h3>
+          <div class="table-wrap">
+            <table id="wf-table" class="tbl"><thead><tr><th>WC</th><th class="num">Matches</th><th class="num">Log-loss</th><th class="num hide-sm">Brier</th><th class="num">Acc</th><th class="num">Lift</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Feature ablation</h3>
+          <div class="table-wrap">
+            <table id="abl-table" class="tbl"><thead><tr><th>Configuration</th><th class="num">Log-loss</th><th class="num hide-sm">Brier</th><th class="num">Acc</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="reveal">
+      <h2>What's powering the prediction</h2>
+      <div class="how-grid">
+        <div class="card"><h4>1. Match history</h4><p>49,000+ international matches since 1872 — every friendly, qualifier and tournament.</p></div>
+        <div class="card"><h4>2. Elo ratings</h4><p>Chess-style rating updated after every match. Tournaments weight more than friendlies.</p></div>
+        <div class="card"><h4>3. Time-decayed form</h4><p>180-day exponential half-life — recent matches matter much more than old ones.</p></div>
+        <div class="card"><h4>4. Squad value prior</h4><p>Transfermarkt aggregate (€20M – €1.5B). Captures young-talent surges Elo hasn't caught up with.</p></div>
+        <div class="card"><h4>5. Venue effects</h4><p>Altitude (Mexico City: 2,240m), climate (Houston/Miami heat), per-venue host-country boost.</p></div>
+        <div class="card"><h4>6. Travel fatigue</h4><p>Pre-computed 16×16 Haversine matrix. Per-km Elo penalty between consecutive group matches.</p></div>
+        <div class="card"><h4>7. Goal model</h4><p>Negative Binomial goal model with Dixon-Coles low-score correction.</p></div>
+        <div class="card"><h4>8. FIFA bracket</h4><p>Official Round of 32 → final structure. Annex C 495-row third-place lookup.</p></div>
+        <div class="card"><h4>9. Monte Carlo</h4><p>5 independent seeds × 5,000 sims with extra time, penalties, and 95% confidence intervals.</p></div>
+      </div>
+
+      <h2 style="margin-top: 36px">Feature importance — home goals model</h2>
+      <div class="card chart-card small">
+        <canvas id="feat-chart"></canvas>
+      </div>
+    </section>
+
+    <section id="live-info" class="reveal">
+      <div class="card live-info-card">
+        <h3>How live updates work</h3>
+        <div class="live-info-grid">
+          <div>
+            <strong>Automatic re-simulation.</strong> A GitHub Actions cron job runs every 15 minutes during the tournament window (11 Jun → 19 Jul 2026).
+            It checks for newly-finalised matches, locks their scorelines, and re-runs the full Monte Carlo simulator. Updated JSON is committed and the dashboard
+            picks it up on the next page load. No restart needed.
+          </div>
+          <div>
+            <strong>Data sources.</strong> A pluggable fetcher supports manual entry (default), API-Football, and Sportmonks. To go fully autonomous, add the
+            relevant API key as a CI secret — the orchestrator handles deduping, status filtering (FT / AET / PEN), and retries.
+          </div>
+          <div>
+            <strong>Weather forecast (roadmap).</strong> Today the model uses static climate buckets (mild / hot / very_hot / high_altitude_*) derived from
+            venue metadata. A future patch pulls 24-hour forecasts from OpenWeatherMap or similar at simulation time and converts wet-bulb / dew-point into a
+            graded heat penalty — keeping the prediction current with conditions on the ground.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="downloads" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Open data</h2>
+          <p class="section-desc">Everything on this page is loaded from the JSON files below. Download, audit, or wire into your own tools.</p>
+        </div>
+      </div>
+      <div class="downloads-grid">
+        <a class="card download-card" href="./predictions.json" download>
+          <div class="dl-name">predictions.json</div>
+          <div class="dl-desc">Team + match probabilities with simulation ranges · ~110 KB</div>
+        </a>
+        <a class="card download-card" href="./calibration.json" download>
+          <div class="dl-name">calibration.json</div>
+          <div class="dl-desc">Per-bucket predicted vs actual frequencies · ~5 KB</div>
+        </a>
+        <a class="card download-card" href="./walk_forward.json" download>
+          <div class="dl-name">walk_forward.json</div>
+          <div class="dl-desc">WC 2010/14/18/22 walk-forward backtest · ~1 KB</div>
+        </a>
+        <a class="card download-card" href="./ablation.json" download>
+          <div class="dl-name">ablation.json</div>
+          <div class="dl-desc">Feature ablation (Elo-only vs full model) · ~1 KB</div>
+        </a>
+        <a class="card download-card" href="./sensitivity.json" download>
+          <div class="dl-name">sensitivity.json</div>
+          <div class="dl-desc">22-scenario hyper-parameter audit · ~55 KB</div>
+        </a>
+        <a class="card download-card" href="./travel_impact.json" download>
+          <div class="dl-name">travel_impact.json</div>
+          <div class="dl-desc">Travel-on vs travel-off champion-prob diffs · ~13 KB</div>
+        </a>
+        <a class="card download-card" href="./live_state.json" download>
+          <div class="dl-name">live_state.json</div>
+          <div class="dl-desc">Current mode, completed-match count, last-updated timestamp</div>
+        </a>
+        <a class="card download-card" href="./live_delta.json" download>
+          <div class="dl-name">live_delta.json</div>
+          <div class="dl-desc">Pre-tournament → live champion-prob movers (≥0.5pp)</div>
+        </a>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="footer-grid">
+        <div class="footer-credit">
+          <span class="footer-brand">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent); vertical-align: -3px; margin-right: 6px"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="m12 12 6 6"/><path d="m12 12-6 6"/></svg>
+            World Cup 2026 Simulator
+          </span>
+          <span class="muted small">Built for curiosity, not certainty.</span>
+        </div>
+        <div class="footer-author">
+          <span class="muted small">by</span>
+          <a href="https://pravindurgani.com/" target="_blank" rel="noopener noreferrer" class="author-link">
+            Pravin Durgani
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>
+          </a>
+        </div>
+        <p id="footer-meta" class="footer-meta muted small">—</p>
+        <p class="muted small">
+          Data: <a href="https://github.com/martj42/international_results" target="_blank" rel="noopener noreferrer">martj42/international_results</a> · FIFA.com · Transfermarkt · ESPN
+        </p>
+      </div>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

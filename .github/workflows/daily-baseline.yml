@@ -1,0 +1,71 @@
+name: Daily baseline refresh
+
+# Runs ONCE daily at 05:00 UTC (well outside any match window in NA timezones).
+# Re-trains the model on the latest historical data and runs the static
+# pre-tournament simulation. Live updates are handled by the matchday workflow.
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: wc26-baseline
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Re-train + evaluate + sensitivity
+        run: |
+          python scripts/01_prepare_data.py
+          python scripts/02_goal_model.py
+          python scripts/04_evaluate.py
+          python scripts/06_ablation.py
+          python scripts/07_walk_forward.py
+
+      - name: Run sensitivity (slow)
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/05_sensitivity.py
+
+      - name: Run production simulations
+        run: |
+          python scripts/03_simulate.py --no-travel --out predictions_no_travel.json --seeds 5 --sims 5000
+          python scripts/03_simulate.py --seeds 5 --sims 5000
+          python scripts/08_travel_impact.py
+
+      - name: Sync to dashboard
+        run: |
+          cp data/processed/predictions.json dashboard/
+          cp data/processed/calibration.json dashboard/
+          cp data/processed/travel_impact.json dashboard/
+          cp models/walk_forward.json dashboard/
+          cp models/ablation.json dashboard/
+          if [ -f models/sensitivity.json ]; then cp models/sensitivity.json dashboard/; fi
+
+      - name: Validate
+        run: python scripts/09_validate.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-baseline-${{ github.run_id }}
+          path: dashboard/*.json
+
+      # Uncomment when Vercel secrets are configured
+      # - uses: amondnet/vercel-action@v25
+      #   with:
+      #     vercel-token: ${{ secrets.VERCEL_TOKEN }}
+      #     vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+      #     vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+      #     working-directory: dashboard
+      #     vercel-args: '--prod'

@@ -1,0 +1,14 @@
+{
+  "schema": "Apply Elo penalties for missing players (injury/suspension). Updated manually until API integration. Adjustments expire on expires_at; pre-tournament has been empty as squad announcements happen close to 11 June.",
+  "updated_at": "2026-06-09T15:00:00Z",
+  "source": "manual",
+  "tier_guide": {
+    "tier_1_star": "-30 Elo (Mbappé / Bellingham / Vinícius / Haaland / Rodri-level)",
+    "tier_1_keeper": "-25 Elo (starting GK at a top-10 team)",
+    "tier_2_starter": "-12 Elo (regular starter, not headline player)",
+    "tier_3_squad": "-4 Elo (rotation player)",
+    "doubtful": "apply 50% of the tier amount",
+    "suspended_one_match": "apply full tier penalty for that match only"
+  },
+  "adjustments": []
+}

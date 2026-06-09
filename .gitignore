@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+__MACOSX/
+Thumbs.db
+
+# Logs / tmp
+*.log
+*.tmp
+*.swp
+
+# Data / model artifacts
+data/processed/*.parquet
+models/*.joblib
+
+# Local agent / tooling state
+.claude/
+.gstack/
+
+# Keep these:
+!data/raw/
+!data/processed/predictions.json
+!models/metrics.json
+circuit-breaker-state.json
+.vercel

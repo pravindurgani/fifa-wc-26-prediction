@@ -1,0 +1,21 @@
+{
+  "source": "Transfermarkt (via Sportingpedia & GiveMeSport aggregations, May-June 2026)",
+  "retrieved_at": "2026-06-09",
+  "currency": "EUR_millions",
+  "notes": "Pre-tournament aggregate squad market values. Used as a leading indicator of team strength complementary to Elo. Range: France €1.53B → Jordan €20M. Treat as a strength proxy correlated with but distinct from Elo.",
+  "squad_values": {
+    "France": 1530, "England": 1310, "Spain": 1260, "Portugal": 1020,
+    "Germany": 998, "Brazil": 912, "Netherlands": 837, "Argentina": 819,
+    "Norway": 601, "Belgium": 543, "Ivory Coast": 531, "Turkey": 494,
+    "Morocco": 488, "Senegal": 473, "Sweden": 429, "Uruguay": 406,
+    "Croatia": 386, "United States": 379, "Ecuador": 376, "Switzerland": 334,
+    "Colombia": 306, "Japan": 280, "Austria": 272, "Algeria": 258,
+    "Ghana": 231, "Canada": 203, "Mexico": 195, "Czechia": 190,
+    "Scotland": 177, "Paraguay": 157, "Bosnia and Herzegovina": 149,
+    "DR Congo": 149, "South Korea": 142, "Egypt": 135, "Australia": 74,
+    "Uzbekistan": 70, "Tunisia": 70, "Cape Verde": 56, "Haiti": 56,
+    "South Africa": 46, "Saudi Arabia": 37, "New Zealand": 35,
+    "Panama": 35, "Iran": 33, "Curacao": 26, "Iraq": 21,
+    "Qatar": 20, "Jordan": 20
+  }
+}

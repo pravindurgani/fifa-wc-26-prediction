@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Methodology — How we predict the World Cup 2026</title>
+  <meta name="description" content="Plain-English walkthrough of how the FIFA World Cup 2026 prediction model works." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="methodology.css" />
+  <script>
+    (function() {
+      const stored = localStorage.getItem('wc26-theme');
+      const sys = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      document.documentElement.dataset.theme = stored || sys;
+    })();
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>Methodology <span class="ver-pill">v3</span></h1>
+          <span class="tag">A plain-English walkthrough — no maths degree required</span>
+        </div>
+      </div>
+      <div class="top-controls">
+        <a href="index.html"><button>← Dashboard</button></a>
+        <a href="appendix.html"><button class="btn-secondary">Technical appendix →</button></a>
+        <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container method-main">
+
+    <section class="tldr-card">
+      <h2>The 30-second version</h2>
+      <p>
+        We taught a computer to study <strong>every international football match since
+        1872</strong> (~49,000 games). It learned what makes one team beat another and
+        roughly how many goals each side tends to score. Then we simulated the entire
+        2026 World Cup tens of thousands of times — using the actual FIFA bracket,
+        official tiebreaker rules, and a calibrated goal model — and reported how often
+        each team wins. The dashboard shows those frequencies, with confidence intervals,
+        sensitivity audit, and walk-forward backtests on the last four World Cups.
+      </p>
+    </section>
+
+    <h2 class="big-h">The pipeline in one picture</h2>
+    <div class="pipeline">
+      <div class="step"><div class="num">1</div><div class="step-body"><h4>Gather data</h4><p>49k matches · FIFA rankings · groups · schedule · venues · squad values</p></div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">2</div><div class="step-body"><h4>Rate teams</h4><p>Elo + time-decayed form + squad-value prior</p></div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">3</div><div class="step-body"><h4>Goal model</h4><p>Poisson regressors + Negative Binomial dispersion + Dixon-Coles τ</p></div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">4</div><div class="step-body"><h4>Simulate</h4><p>Official bracket · Annex C · full tiebreakers · ET + penalties</p></div></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="num">5</div><div class="step-body"><h4>Honest probs</h4><p>With confidence intervals + concentration sanity + sensitivity audit</p></div></div>
+    </div>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      </div>
+      <div>
+        <h2>How we rate teams</h2>
+        <p>
+          We use <strong>Elo</strong>, originally a chess rating system. Every team
+          starts at 1500 points. Beat a stronger team — you gain more. Beat a weaker
+          team — you gain less. Lose to a weaker team — you lose more.
+        </p>
+        <p>
+          We replay every international match in history and update ratings after each one.
+          Important matches (World Cup, Euros, Copa América) count much more than friendlies.
+          Big wins count more than narrow ones, but with a cap so a 7-0 doesn't get vastly
+          more credit than a 4-0.
+        </p>
+        <p>
+          We add two smaller boosts: <strong>recent form</strong> (180-day exponential
+          half-life — a match from last week matters far more than one from a year ago),
+          and a <strong>squad-value prior</strong> from Transfermarkt (captures
+          young-talent surges before Elo catches up).
+        </p>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 8h10v2a5 5 0 0 1-10 0V8z"/><path d="M17 8h2.5a2.5 2.5 0 0 0 0-5H17"/><path d="M7 8H4.5a2.5 2.5 0 0 1 0-5H7"/></svg>
+      </div>
+      <div>
+        <h2>The goal model — predicting scorelines</h2>
+        <p>
+          For every match we predict <strong>two numbers</strong>: the expected goals
+          each team will score. Two XGBoost Poisson regressors trained on 27,000+
+          post-1990 matches do this.
+        </p>
+        <p>
+          Then we turn (λ_h, λ_a) into a realistic scoreline distribution:
+        </p>
+        <ul>
+          <li><strong>Negative Binomial marginals</strong> instead of plain Poissons — adds the "long-tail" variance football scores actually have.</li>
+          <li><strong>Dixon-Coles τ correction</strong> on the joint matrix for (0-0, 0-1, 1-0, 1-1) — fixes the chronic under-prediction of low-score draws.</li>
+          <li><strong>Per-match λ noise</strong> via a Gamma multiplier per simulation — captures "off days" and "purple patches" beyond the dispersion baseline.</li>
+        </ul>
+        <div class="example-box">
+          <div class="example-title">Example — Spain vs Saudi Arabia</div>
+          <p style="margin:0">
+            Mean λ_h = 2.8, λ_a = 0.5. Independent Poissons would say Spain wins ~90%.
+            With Negative Binomial dispersion + τ correction + match-day noise,
+            <strong>Spain wins ~76%</strong>, draws ~14%, Saudi pulls a shock ~10%.
+            That extra 14 percentage points of "non-blowout" outcomes is what real
+            football looks like.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+      </div>
+      <div>
+        <h2>The bracket and tiebreakers</h2>
+        <p>
+          The 2026 World Cup is the first with 48 teams. FIFA published the exact
+          <strong>Round of 32 bracket</strong> in advance: which group-stage finishing
+          position fills which knockout slot.
+        </p>
+        <p>
+          For the <strong>8 best third-placers</strong> — which 8 groups produce them
+          changes the slot assignment. FIFA's regulations include a
+          <strong>495-row Annex C lookup table</strong>. We use it exactly: zero misses
+          across all simulations.
+        </p>
+        <p>For group ties we apply the full FIFA 2026 cascade:</p>
+        <ol class="walkthrough small-walk">
+          <li>Most points</li>
+          <li>Best goal difference</li>
+          <li>Most goals scored</li>
+          <li>Head-to-head points among tied teams</li>
+          <li>Head-to-head goal difference</li>
+          <li>Head-to-head goals scored</li>
+          <li>Fair-play points (approximated as zero in simulation)</li>
+          <li>FIFA World Ranking (new for 2026 — replaces drawing of lots)</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20Z"/></svg>
+      </div>
+      <div>
+        <h2>Geography matters — venue effects</h2>
+        <p>The 2026 tournament spans <strong>16 cities across 3 countries</strong>, from Vancouver to Mexico City. Travel, altitude, and climate matter.</p>
+        <div class="features-grid">
+          <div class="feature-chip"><strong>Altitude</strong>Mexico City sits at 2,240m. Teams not adapted get ~25 Elo penalty.</div>
+          <div class="feature-chip"><strong>Heat & humidity</strong>Houston, Miami, Dallas hit 35°C+ in June/July. European/Asian-temperate teams get ~15 Elo penalty.</div>
+          <div class="feature-chip"><strong>Host advantage</strong>USA / Mexico / Canada get +50 Elo at home, +15 Elo in sister host country.</div>
+          <div class="feature-chip"><strong>Travel fatigue</strong>Pre-computed Haversine matrix between 16 host cities — per-km Elo penalty with cap.</div>
+          <div class="feature-chip"><strong>Squad value prior</strong>Transfermarkt aggregate, capped at ±10 Elo — leading-indicator nudge.</div>
+          <div class="feature-chip"><strong>Injury layer</strong>Manual JSON adjustments for missing key players (Tier-based Elo penalty).</div>
+        </div>
+        <p class="muted" style="margin-top:14px">
+          All hand-coded assumptions are stress-tested in the sensitivity analysis
+          (<a href="index.html#robustness">Robustness section</a>) — top-team rankings
+          stay stable across 22 different parameter scenarios.
+        </p>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>
+      </div>
+      <div>
+        <h2>Is the model honest? Calibration + walk-forward</h2>
+        <p>
+          A model that says "70% home win" should be right ~70% of the time on matches
+          like that. We test this two ways:
+        </p>
+        <ul>
+          <li><strong>Calibration on 4,839 unseen modern matches.</strong> Predicted 0.85 home win matches actual 0.85 — excellent (see <a href="index.html#calibration">calibration chart</a>).</li>
+          <li><strong>Walk-forward backtest on past World Cups.</strong> Trained on pre-each-WC data, tested on actual WC. Average log-loss across WC 2010/14/18/22 is 0.98 vs naive baseline 1.09 — meaningful but honest lift. The 2022 result (Argentina won an upset over Brazil/France) had only +0.01 lift — honest evidence the model has limits in upset-heavy tournaments.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16h6"/><path d="M21 12.5V16"/><path d="M22 12.5V21a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h14"/><path d="m18 3 4 4-4 4"/><path d="M22 7H10"/></svg>
+      </div>
+      <div>
+        <h2>Sensitivity audit — are these numbers stable?</h2>
+        <p>
+          Every hand-coded assumption (host boost, altitude penalty, heat penalty,
+          squad-value cap, penalty-shootout slope, Negative Binomial dispersion) was
+          varied across 22 scenarios. For top contenders:
+        </p>
+        <ul>
+          <li>Spain's champion probability stays in <strong>23.2% — 28.2%</strong>.</li>
+          <li>Argentina's stays in <strong>18.6% — 22.0%</strong>.</li>
+          <li>France's stays in <strong>8.0% — 10.3%</strong>.</li>
+          <li>Top-6 rank ordering is identical across all 22 scenarios.</li>
+        </ul>
+        <p>
+          The precise percentages move a little with assumption choices, but the broad
+          ranking story doesn't. The numbers aren't a coincidence of one chosen
+          parameter setting.
+        </p>
+      </div>
+    </section>
+
+    <section class="explain warn">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      </div>
+      <div>
+        <h2>What this model still can't see</h2>
+        <ul>
+          <li><strong>Last-minute injuries / suspensions</strong> — squad announcements typically come 1-2 days before the opener.</li>
+          <li><strong>Refereeing patterns</strong> — controversial calls swing tight matches.</li>
+          <li><strong>Tactical match-ups</strong> — some coaches simply have a manager's number.</li>
+          <li><strong>In-tournament momentum</strong> — pre-tournament form is held static across simulations (live mode is foundation-laid but not yet auto-feeding).</li>
+          <li><strong>Live weather forecasts</strong> — climate is bucketed (mild / hot / altitude), not pulled from forecast APIs.</li>
+        </ul>
+        <p>
+          That's why the top contender doesn't exceed ~25% even with all the modelling
+          improvements. The World Cup is structurally an upset machine.
+        </p>
+      </div>
+    </section>
+
+    <section class="explain">
+      <div class="explain-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+      </div>
+      <div>
+        <h2>Where the data comes from</h2>
+        <ul class="data-sources">
+          <li><strong>49,450 historical international results</strong> — open <code>martj42/international_results</code> (CC0) on GitHub.</li>
+          <li><strong>FIFA World Ranking</strong> (June 2026 live tracker) — feeds the ultimate tiebreaker.</li>
+          <li><strong>2026 schedule + groups</strong> — FIFA.com (final draw 5 Dec 2025).</li>
+          <li><strong>R32 bracket + Annex C lookup table (495 entries)</strong> — FIFA Regulations Annex C.</li>
+          <li><strong>Squad market values</strong> — Transfermarkt via Sportingpedia / GiveMeSport (May-June 2026).</li>
+          <li><strong>Stadium / city metadata</strong> — coordinates, altitude, climate for all 16 host cities.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="cta">
+      <h2>Ready to see the predictions?</h2>
+      <a href="index.html" class="cta-button">← Back to the dashboard</a>
+    </section>
+
+  </main>
+
+  <script>
+    document.getElementById('theme-toggle').addEventListener('click', () => {
+      const cur = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = cur;
+      localStorage.setItem('wc26-theme', cur);
+    });
+  </script>
+</body>
+</html>

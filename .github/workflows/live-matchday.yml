@@ -1,0 +1,66 @@
+name: Live matchday refresh
+
+# Polls every 15 minutes during the tournament window (06:00-04:00 UTC each day,
+# covering all NA kickoffs). The orchestrator exits fast if no match has changed
+# to a final state — only re-simulates when something genuinely happened.
+#
+# Tournament dates: 2026-06-11 → 2026-07-19.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: wc26-live
+  cancel-in-progress: false   # let any in-flight rerun finish
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Only run during the tournament window
+    if: ${{ true }}   # guard logic is in the python orchestrator
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Date gate (skip if outside tournament window)
+        id: gate
+        run: |
+          NOW=$(date -u +%s)
+          START=$(date -u -d '2026-06-11 00:00:00' +%s 2>/dev/null || python -c "import datetime;print(int(datetime.datetime(2026,6,11).timestamp()))")
+          END=$(date -u -d '2026-07-20 00:00:00' +%s 2>/dev/null || python -c "import datetime;print(int(datetime.datetime(2026,7,20).timestamp()))")
+          if [ $NOW -lt $START ] || [ $NOW -gt $END ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Outside tournament window — exiting."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run live update orchestrator
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          WC_RESULTS_SOURCE: ${{ vars.WC_RESULTS_SOURCE || 'mock' }}
+          WC_APIFOOTBALL_KEY: ${{ secrets.WC_APIFOOTBALL_KEY }}
+          WC_SPORTMONKS_TOKEN: ${{ secrets.WC_SPORTMONKS_TOKEN }}
+        run: python scripts/live/run_live_update.py
+
+      - name: Commit updated JSON (if changed)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          git config user.name "wc26-bot"
+          git config user.email "wc26-bot@users.noreply.github.com"
+          git add dashboard/*.json data/live/*.json
+          git diff --quiet --cached || git commit -m "live: update [skip ci]"
+          git push || echo "Nothing to push"
+
+      # Optional: trigger Vercel rebuild
+      # - run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"

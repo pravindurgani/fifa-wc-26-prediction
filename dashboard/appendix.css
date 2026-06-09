@@ -1,0 +1,98 @@
+/* Appendix-specific styling — extends styles.css + methodology.css */
+
+.appendix-main { max-width: 980px; }
+
+.appendix-intro {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 18px;
+  margin: 12px 0 16px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.appendix-intro svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.appendix-intro strong { color: var(--text); }
+
+.appendix-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  padding: 12px 18px;
+  margin: 16px 0 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  position: sticky;
+  top: 70px;
+  z-index: 30;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+@media (max-width: 900px) {
+  .appendix-toc { position: static; }
+}
+.appendix-toc strong { color: var(--text-2); font-weight: 600; }
+.appendix-toc a {
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  transition: background-color .15s;
+}
+.appendix-toc a:hover { background: var(--accent-soft); color: var(--accent-2); }
+
+.apx-sub {
+  margin: 22px 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0;
+}
+
+.eqn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  color: var(--text);
+  white-space: pre;
+  margin: 12px 0;
+}
+
+.apx-tbl {
+  width: 100%;
+  font-size: 13px;
+  margin: 8px 0 14px;
+}
+.apx-tbl thead th {
+  background: var(--surface-elev);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  padding: 10px 12px;
+  text-align: left;
+}
+.apx-tbl tbody td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.apx-tbl .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.apx-dl-list { padding-left: 18px; }
+.apx-dl-list li { margin: 6px 0; font-size: 13px; }
+.apx-dl-list code { font-family: var(--font-mono); background: var(--surface-elev); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
