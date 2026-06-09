@@ -183,6 +183,80 @@ def http_get_json(url: str, headers: dict, timeout: int = 15, retries: int = 3) 
     raise last_err if last_err else RuntimeError(f"http_get_json failed: {url}")
 
 
+# ─── KNOCKOUT DECODER (A.2) ─────────────────────────────────────────────────
+# Shared helper used by both API-Football and football-data.org adapters to
+# extract penalty-shootout sub-scores and the winning team. Empirically grounded
+# in the A.0 probe (tests/live/provider_samples/apifootball_*.json):
+#
+#   For PEN matches, API-Football returns:
+#     score.penalty.{home, away}  → int sub-scores ("3", "0")
+#     teams.{home, away}.winner   → true / false (one side always true)
+#     goals.{home, away}          → regulation+ET total (e.g. 0-0)
+#
+#   For AET matches:
+#     score.penalty.{home, away}  → null, null
+#     score.extratime.{home,away} → ET-only goals (e.g. 1-0)
+#     goals.{home, away}          → regulation+ET total (e.g. 2-1)
+#     teams.{home, away}.winner   → true / false
+#
+#   For FT matches, score.penalty is {null, null} and winner reflects the
+#   group-stage outcome (or null on draws — irrelevant for group stage).
+#
+# football-data.org uses parallel field names (score.penalties.{home, away},
+# score.winner = "HOME_TEAM"|"AWAY_TEAM"|"DRAW"). The helper accepts either
+# shape via the `winner_source` argument.
+def extract_pens_and_winner(
+    score_block: dict,
+    teams_block: dict,
+    canon_status: str,
+    winner_source: str = "api_football",
+) -> tuple[int | None, int | None, str | None]:
+    """Returns (home_pens, away_pens, winner).
+
+    `winner` is one of "home" | "away" | None. None is correct for:
+      - group-stage draws
+      - any FT match (no need to single out a winner)
+      - PEN matches where the provider hasn't populated the winner field yet
+        (caller should WARN + skip — never fabricate)
+
+    `home_pens` / `away_pens` are int sub-scores for PEN matches, None
+    otherwise. Stored alongside the regulation+ET goals so downstream
+    consumers can render "Spain 1-1 France (4-3 pens)" without ambiguity.
+    """
+    # Pen sub-scores — only present for PEN status, always None otherwise.
+    pen_block = (score_block or {}).get("penalty") or (score_block or {}).get("penalties") or {}
+    home_pens = pen_block.get("home")
+    away_pens = pen_block.get("away")
+    # Coerce to int when present (some providers return strings)
+    if home_pens is not None:
+        try: home_pens = int(home_pens)
+        except (TypeError, ValueError): home_pens = None
+    if away_pens is not None:
+        try: away_pens = int(away_pens)
+        except (TypeError, ValueError): away_pens = None
+
+    # Winner derivation depends on the source schema
+    winner: str | None = None
+    if winner_source == "api_football":
+        home_w = (teams_block.get("home") or {}).get("winner")
+        away_w = (teams_block.get("away") or {}).get("winner")
+        if home_w is True:
+            winner = "home"
+        elif away_w is True:
+            winner = "away"
+        # Both null/false → no winner (draw, group stage, or pre-resolution)
+    elif winner_source == "football_data":
+        # football-data exposes a top-level winner enum in the score block
+        fd_winner = (score_block or {}).get("winner")
+        if fd_winner == "HOME_TEAM":
+            winner = "home"
+        elif fd_winner == "AWAY_TEAM":
+            winner = "away"
+    # Knockouts must always have a winner — if status is PEN/AET but winner
+    # is None, the caller's responsibility is to log + skip.
+    return home_pens, away_pens, winner
+
+
 # ─── PROVIDER: MOCK ─────────────────────────────────────────────────────────
 def fetch_mock() -> list[dict]:
     """Mock: return whatever's already in results_2026.json (manual entry mode)."""
@@ -345,6 +419,23 @@ def fetch_api_football(api_key: str, dry_run: bool = False) -> list[dict]:
             print(f"[fetch_results] WARN: M{m_id} status={short} but goals missing — skipping")
             continue
 
+        # A.2 — knockout decoding: extract PEN sub-scores + winner.
+        # Verified via A.0 probe: API-Football populates score.penalty.{home,away}
+        # for PEN matches and teams.{home,away}.winner (true/false) for any
+        # completed knockout. Group stage matches leave penalty as {null, null}
+        # and winner may be null on draws — those resolve to (None, None, None)
+        # which is exactly what extract_pens_and_winner returns.
+        score_block = f.get("score") or {}
+        home_pens, away_pens, winner = extract_pens_and_winner(
+            score_block, teams, canon_status,
+        )
+        if canon_status == "PEN" and winner is None:
+            # The provider classified this as a shootout but didn't populate
+            # a winner — defensive: skip rather than fabricate. Real PEN
+            # matches always have a winner; missing means transient bad data.
+            print(f"[fetch_results] WARN: M{m_id} status=PEN but no winner field — skipping")
+            continue
+
         out.append({
             "m": int(m_id),
             "provider_fixture_id": provider_fixture_id,
@@ -353,6 +444,9 @@ def fetch_api_football(api_key: str, dry_run: bool = False) -> list[dict]:
             "away": sched["away"],
             "home_score": int(gh) if isinstance(gh, int) else None,
             "away_score": int(ga) if isinstance(ga, int) else None,
+            "home_pens": home_pens,
+            "away_pens": away_pens,
+            "winner": winner,
             "status": canon_status,
             "status_long": status.get("long", ""),
             "elapsed": status.get("elapsed"),
@@ -472,6 +566,21 @@ def fetch_football_data(token: str, dry_run: bool = False) -> list[dict]:
             print(f"[fetch_results] WARN: M{m_id} status={raw_status} but score missing — skipping")
             continue
 
+        # A.2 — knockout decoding (football-data.org variant).
+        # Previously this adapter inferred AET/PEN from sub-score presence but
+        # discarded the penalty sub-scores themselves and never captured the
+        # winner. That was a bug: a 1-1 (4-3 pens) match would store as
+        # home_score=1, away_score=1 with no way for downstream consumers to
+        # tell who advanced. Now using the shared extract_pens_and_winner.
+        # football-data wraps the winner enum on the score block, not teams.
+        home_pens, away_pens, winner = extract_pens_and_winner(
+            score, teams_block={}, canon_status=eff_status,
+            winner_source="football_data",
+        )
+        if eff_status == "PEN" and winner is None:
+            print(f"[fetch_results] WARN: M{m_id} status=PEN but no winner field — skipping")
+            continue
+
         out.append({
             "m": int(m_id),
             "provider_fixture_id": provider_id,
@@ -480,6 +589,9 @@ def fetch_football_data(token: str, dry_run: bool = False) -> list[dict]:
             "away": sched["away"],
             "home_score": int(gh) if isinstance(gh, int) else None,
             "away_score": int(ga) if isinstance(ga, int) else None,
+            "home_pens": home_pens,
+            "away_pens": away_pens,
+            "winner": winner,
             "status": eff_status,
             "status_long": raw_status.replace("_", " ").title(),
             "elapsed": (m.get("minute") if isinstance(m.get("minute"), int) else None),
