@@ -217,6 +217,37 @@ function providerLabel(source) {
   return source;
 }
 
+// A.6: format a locked match score into the right human string.
+// Inputs:
+//   ls — either a structured object (post-A.2):
+//        { home_score, away_score, home_pens, away_pens, winner, status }
+//        OR a legacy string ("2-1") OR a falsy value.
+// Outputs (caller passes through escapeHtml — never trust score data
+// blindly even though it's internally generated):
+//   "2-1"            → FT / no special status
+//   "1-1 AET"        → extra-time decided knockout
+//   "1-1 (4-3 pens)" → penalty shootout
+//   ""               → no locked score
+function formatLockedScore(ls) {
+  if (!ls) return '';
+  // Legacy: locked_score was sometimes a pre-formatted string.
+  if (typeof ls === 'string') return ls;
+  if (typeof ls !== 'object') return String(ls);
+  const h = ls.home_score, a = ls.away_score;
+  if (h == null || a == null) return '';
+  const base = `${h}-${a}`;
+  const status = (ls.status || '').toUpperCase();
+  // PEN: include shootout sub-scores if present (the typical case).
+  // The (X-Y pens) suffix is the source-of-truth representation —
+  // the regulation+ET score alone is ambiguous (0-0 could be a draw
+  // or a 0-0 (3-0 pens) shootout).
+  if (status === 'PEN' && ls.home_pens != null && ls.away_pens != null) {
+    return `${base} (${ls.home_pens}-${ls.away_pens} pens)`;
+  }
+  if (status === 'AET') return `${base} AET`;
+  return base;
+}
+
 function renderLiveStatusBar(liveState) {
   if (!liveState) return;
   const banner = document.getElementById('live-status');
@@ -834,7 +865,11 @@ function renderMatches(data, liveState) {
       else if ((m.climate || '').includes('hot')) tags.push('<span class="tag hot">hot</span>');
       const travel = Math.max(m.home_travel_km || 0, m.away_travel_km || 0);
       if (travel > 2500) tags.push(`<span class="tag travel">${(travel/1000).toFixed(1)}k km</span>`);
-      if (m.locked_score) tags.push(`<span class="tag locked">final ${escapeHtml(m.locked_score)}</span>`);
+      // A.6: locked_score is now a structured object (post-A.2); formatLockedScore
+      // handles FT / AET / PEN correctly. The (X-Y pens) suffix on shootouts is
+      // critical — without it, a 0-0 (3-0 pens) win renders as a misleading draw.
+      const lockedLabel = formatLockedScore(m.locked_score);
+      if (lockedLabel) tags.push(`<span class="tag locked">final ${escapeHtml(lockedLabel)}</span>`);
 
       return `<div class="card match" id="match-${m.m}">
         <div class="match-head">
