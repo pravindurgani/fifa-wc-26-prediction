@@ -92,9 +92,28 @@ Edit `data/live/results_2026.json` to add completed match scorelines:
 Then `python scripts/03_simulate.py --live --out predictions_live.json` — locked matches
 are used verbatim, future matches simulated with updated state.
 
-## Injury / suspension layer
+## Matchday intelligence (live)
 
-Edit `data/live/team_adjustments.json`:
+A 3h GitHub Actions workflow (`matchday-intel-slow.yml`) fans out to four
+fetchers and consolidates the results into a single per-team Elo adjustment
+the simulator picks up via `apply_matchday_adjustments.get_team_elo_adjustment()`.
+
+| Layer        | Source                                  | Cap (Elo)        | File                                  |
+|--------------|-----------------------------------------|------------------|---------------------------------------|
+| Injuries     | API-Football `/injuries`                | ±25 / extreme ±35 | `data/live/injuries_2026.json`        |
+| Weather      | Open-Meteo (16-day forecast + climate fallback) | ±15      | `data/live/weather_2026.json`         |
+| Lineups      | API-Football `/fixtures/lineups`        | ±20              | `data/live/lineups_2026.json`         |
+| Stats proxy  | API-Football `/fixtures/statistics` (NOT xG) | ±8/match, ±20/group | `data/live/match_stats_2026.json` |
+| Aggregate    | sum across layers                       | **±35 / team / match** | `dashboard/matchday_intelligence.json` |
+| Grand total  | + mid-tournament live form delta        | **±45**          | (enforced in simulator) |
+
+Every per-tick decision is appended to `data/live/matchday_intelligence_log.jsonl`
+so any probability move can be traced back to the row that triggered it.
+
+Manual operator overlay (`data/live/team_adjustments.json`) still stacks on
+top of the API auto-feed — used for tier-1 player calls API-Football doesn't
+disambiguate (Mbappé / Bellingham / Rodri-tier players warrant -30 rather than
+the default -12 starter penalty). Schema:
 
 ```json
 {
@@ -105,8 +124,9 @@ Edit `data/live/team_adjustments.json`:
 }
 ```
 
-Adjustments apply at simulation time only; they don't permanently modify Elo.
-Expired adjustments are ignored. Use `--no-adjustments` to ignore the whole file.
+Expired entries are filtered automatically. The legacy `--no-adjustments`
+flag on `scripts/03_simulate.py` zeros the manual overlay; the API feed is
+controlled by whether `API_FOOTBALL_KEY` is set in CI.
 
 ## Project layout
 
@@ -124,17 +144,48 @@ fifa-wc-26-prediction/
 │   │   └── host_city_distances.py                 # one-shot builder
 │   ├── processed/                                  # parquet + JSON outputs
 │   └── live/
-│       ├── results_2026.json                      # completed match scorelines
-│       └── team_adjustments.json                  # injury/suspension Elo bumps
-├── scripts/                                        # see "What's in the box"
+│       ├── results_2026.json                      # completed match scorelines (10-min refresh)
+│       ├── team_adjustments.json                  # manual injury overlay (operator-curated)
+│       ├── injuries_2026.json                     # API-Football injuries (3h refresh)
+│       ├── weather_2026.json                      # Open-Meteo forecast per venue
+│       ├── lineups_2026.json                      # API-Football confirmed XI (T-4h window)
+│       ├── match_stats_2026.json                  # post-match stats proxy (NOT xG)
+│       ├── matchday_intelligence_log.jsonl        # append-only audit log
+│       ├── live_team_state.json                   # mid-tournament soft Elo deltas
+│       └── provider_fixture_map.json              # provider fixture_id → our match_id
+├── scripts/
+│   ├── 01_prepare_data.py … 09_validate.py        # main pipeline
+│   ├── live/
+│   │   ├── run_live_update.py                     # 10-min orchestrator (fast workflow)
+│   │   ├── fetch_results.py                       # API-Football / football-data results
+│   │   ├── fetch_injuries.py                      # API-Football /injuries  (B.3)
+│   │   ├── fetch_weather.py                       # Open-Meteo forecast    (B.2)
+│   │   ├── fetch_lineups.py                       # API-Football /lineups  (B.4)
+│   │   ├── fetch_match_stats.py                   # API-Football /statistics (B.5, post-match)
+│   │   ├── apply_matchday_adjustments.py          # consolidator + audit log (B.1)
+│   │   ├── injury_adjustments.py                  # tier helpers
+│   │   ├── weather_adjustments.py                 # heat-index / wet-bulb / bucket classifier
+│   │   ├── lineup_adjustments.py                  # GK-swap / rotation heuristics
+│   │   ├── stats_proxy_adjustments.py             # shots / possession / corners (NOT xG)
+│   │   ├── build_provider_fixture_map.py          # one-shot fixture-id mapper
+│   │   └── update_team_state.py                   # soft Elo delta from completed results
+│   ├── research/
+│   │   ├── probe_apifootball_knockouts.py         # one-shot knockout-shape probe
+│   │   └── cwc2025_weather_calibration.py        # CWC2025 backtest of weather table (B.6)
+│   └── pre_flight.py                              # 178-check launch audit
 ├── models/                                         # trained joblib + metrics JSON
 ├── dashboard/
 │   ├── index.html                                  # main dashboard
 │   ├── methodology.html                            # plain-English walkthrough
-│   ├── app.js  +  styles.css  +  methodology.css
+│   ├── appendix.html                               # downloads + known limitations
+│   ├── app.js  +  styles.css  +  methodology.css  +  appendix.css
 │   └── *.json                                      # all data files served statically
 ├── vercel.json                                     # static-host config
-├── .github/workflows/refresh-predictions.yml       # daily pipeline + deploy
+├── .github/workflows/
+│   ├── daily-baseline.yml                          # nightly retrain + deploy
+│   ├── live-matchday.yml                           # 10-min results + simulator (fast)
+│   ├── matchday-intel-slow.yml                     # 3h injuries/weather/lineups/stats (slow)
+│   └── probe-apifootball.yml                       # manual research probe
 ├── requirements.txt
 └── README.md
 ```
@@ -186,10 +237,13 @@ Top-6 rank ordering identical across all 22 scenarios. The model is robust.
 
 ## Known limitations
 
-- **xG features**: deferred — international xG data is patchy pre-2017; would require throwing out 2 decades of training. May add as recent-form modifier later.
-- **Live injury feed**: framework in place (`data/live/team_adjustments.json`), but currently manual. API-Football / Sportmonks integration is a future enhancement.
-- **In-tournament momentum**: pre-tournament form is held mostly static across the 25k sims. Live mode locks completed scorelines but does not yet auto-update Elo mid-tournament (next phase).
+- **True per-shot xG**: deferred — international xG data is patchy pre-2017 and the per-shot location stream isn't in any provider's free tier. The post-match stats proxy uses shots-on-target + possession + corner deltas (capped ±8/match, ±20/group) and is **deliberately not labelled xG** (`true_xg_available` is hard-coded `false`).
+- **Injury importance is API-default, not per-player**: API-Football `/injuries` doesn't expose player rating, so the auto-feed assigns tier-2 starter (-12 Elo) to every missing player. The operator manual overlay in `data/live/team_adjustments.json` stacks on top for tier-1 calls (Mbappé / Bellingham / Rodri-tier).
+- **Lineup adjustments are conservative**: heuristic v1 only fires on confirmed GK swap (-8 Elo) or ≥3 outfield changes vs the team's last recorded XI (-3 Elo). First XI of the tournament is display-only (no baseline). Capped ±20.
+- **Weather forecast horizon**: 16 days (Open-Meteo). The 40-day tournament outlives that — past the horizon, the static climate bucket carries the load (`mild` / `hot` / `very_hot` / `high_altitude_*`).
+- **Pre-tournament Elo baseline**: held static. Matchday intelligence adjusts *effective* Elo per match (via aggregated caps); the underlying historical rating doesn't retrain mid-tournament.
 - **Refereeing patterns**: not modeled.
+- **News + social signals**: out of scope.
 
 ## Data sources
 

@@ -135,6 +135,7 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
           <li><strong>Knockout overtime:</strong> if tied at 90', play extra time with halved λ (15-min halves); if still tied, penalty shootout sampled with team-specific shootout slope (calibrated on historic finals).</li>
           <li><strong>Travel + venue:</strong> per-match effective Elo = base Elo + host boost − travel penalty − altitude penalty − heat penalty + form decay + squad-value prior. All inputs are pre-computed once per tournament; only the goal sample is stochastic.</li>
           <li><strong>Live mode:</strong> with <code>--live</code>, completed matches are locked verbatim (their realised goals enter the goal-difference / head-to-head accounting); remaining matches simulate as normal.</li>
+          <li><strong>Matchday intelligence:</strong> <code>elo_eff_base</code> picks up <code>get_team_elo_adjustment()</code> from <code>scripts/live/apply_matchday_adjustments.py</code>, summing the injury (cap ±25, extreme ±35), weather (±15), lineup (±20), and post-match stats-proxy (±8/match, ±20/group) layers. Aggregate matchday cap is ±35 per team-match; grand total with mid-tournament live-form delta is ±45. Every per-tick decision is appended to <code>data/live/matchday_intelligence_log.jsonl</code> for full audit.</li>
         </ul>
       </div>
     </section>
@@ -335,7 +336,15 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
           <li><a href="./travel_impact.json" download><code>travel_impact.json</code></a> — champion-prob diff with/without travel penalty</li>
           <li><a href="./live_state.json" download><code>live_state.json</code></a> — mode, completed count, last-updated timestamp</li>
           <li><a href="./live_delta.json" download><code>live_delta.json</code></a> — top movers between static and live predictions</li>
+          <li><a href="./matchday_intelligence.json" download><code>matchday_intelligence.json</code></a> — consolidated injury / weather / lineup / stats-proxy adjustments per team-match, with caps and provenance</li>
         </ul>
+        <p class="muted small" style="margin-top:10px">
+          The dashboard only reads the artefacts above. The repository also keeps four upstream feeds in
+          <code>data/live/</code> for traceability (<code>injuries_2026.json</code>, <code>weather_2026.json</code>,
+          <code>lineups_2026.json</code>, <code>match_stats_2026.json</code>) plus the append-only
+          <code>matchday_intelligence_log.jsonl</code> — one record per matchday-intel tick, retained for the
+          tournament duration.
+        </p>
       </div>
     </section>
 
@@ -346,12 +355,14 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
       <div>
         <h2>Known limitations</h2>
         <ul>
-          <li><strong>xG features deferred.</strong> International xG data is patchy pre-2017; including it would shrink the training window by two decades.</li>
-          <li><strong>Live injury / lineup feed is manual.</strong> <code>data/live/team_adjustments.json</code> accepts Elo nudges, but API-Football / Sportmonks integration is a future enhancement.</li>
-          <li><strong>Pre-tournament Elo is held static across sims.</strong> Live mode locks completed scorelines but does not yet recompute baseline Elo mid-tournament — that is the next phase.</li>
+          <li><strong>True per-shot xG is deferred.</strong> International xG data is patchy pre-2017; the post-match stats proxy uses shots-on-target / possession / corner deltas and is <em>deliberately not labelled xG</em> (<code>true_xg_available</code> is hard-coded <code>false</code>) — we don't claim shot-location information the providers don't expose.</li>
+          <li><strong>Injury importance is API-default, not per-player.</strong> API-Football <code>/injuries</code> doesn't expose player rating, so the auto-feed defaults to tier-2 starter (-12 Elo) per missing player. <code>data/live/team_adjustments.json</code> stacks on top for operator tier-1 calls (Mbappé / Bellingham / Rodri-tier).</li>
+          <li><strong>Lineup adjustments are conservative.</strong> Heuristic v1: -8 for a confirmed GK swap, -3 for ≥3 outfield changes vs the team's last recorded XI. First XI of the tournament is display-only (no baseline). Capped ±20.</li>
+          <li><strong>Weather is forecast-based within 16 days, climate-bucket past that.</strong> Open-Meteo provides per-venue forecasts; past horizon (40-day tournament &gt; 16-day forecast), the static climate bucket carries the load.</li>
+          <li><strong>Pre-tournament Elo baseline is held static.</strong> Matchday intelligence adjusts <em>effective</em> Elo per match (via aggregated caps), but the underlying historical rating doesn't retrain mid-tournament.</li>
           <li><strong>Fair-play points are approximated as zero.</strong> Real implementations need card data per match; collecting it is on the roadmap.</li>
           <li><strong>Refereeing patterns are not modelled.</strong></li>
-          <li><strong>Weather is bucketed (mild / hot / very_hot / high_altitude_*)</strong> rather than pulled from a forecast API.</li>
+          <li><strong>News + social signals are out of scope.</strong> Locker-room turmoil, federation politics, tournament-day weather drama aren't captured beyond the structured feeds.</li>
         </ul>
         <p>These are why no contender exceeds ~25%. The World Cup is structurally an upset machine.</p>
       </div>

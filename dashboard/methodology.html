@@ -168,7 +168,10 @@
           <div class="feature-chip"><strong>Host advantage</strong>USA / Mexico / Canada get +50 Elo at home, +15 Elo in sister host country.</div>
           <div class="feature-chip"><strong>Travel fatigue</strong>Pre-computed Haversine matrix between 16 host cities — per-km Elo penalty with cap.</div>
           <div class="feature-chip"><strong>Squad value prior</strong>Transfermarkt aggregate, capped at ±10 Elo — leading-indicator nudge.</div>
-          <div class="feature-chip"><strong>Injury layer</strong>Manual JSON adjustments for missing key players (Tier-based Elo penalty).</div>
+          <div class="feature-chip"><strong>Injury layer</strong>API-Football <code>/injuries</code> every 3h, capped ±25 Elo (extreme ±35). Manual <code>team_adjustments.json</code> overlay still supported for operator tier-1 calls.</div>
+          <div class="feature-chip"><strong>Live weather</strong>Open-Meteo 16-day forecast per venue → NWS-anchored bucket (heat-index, wet-bulb, gust). Confederation acclimatisation table, capped ±15 Elo. Static climate fallback past the forecast horizon.</div>
+          <div class="feature-chip"><strong>Lineups</strong>API-Football <code>/fixtures/lineups</code> within 4h of kickoff. Conservative deltas (-8 GK swap, -3 heavy rotation) capped ±20 Elo; first XI of the tournament is display-only.</div>
+          <div class="feature-chip"><strong>Stats proxy</strong>Post-match shot-on-target + possession + corner deltas, capped ±8 / match and ±20 / group. <em>Deliberately not labelled xG</em> — true xG needs shot-location data we don't have.</div>
         </div>
         <p class="muted" style="margin-top:14px">
           All hand-coded assumptions are stress-tested in the sensitivity analysis
@@ -227,12 +230,18 @@
       <div>
         <h2>What this model still can't see</h2>
         <ul>
-          <li><strong>Last-minute injuries / suspensions</strong> — squad announcements typically come 1-2 days before the opener.</li>
           <li><strong>Refereeing patterns</strong> — controversial calls swing tight matches.</li>
           <li><strong>Tactical match-ups</strong> — some coaches simply have a manager's number.</li>
-          <li><strong>In-tournament momentum</strong> — pre-tournament form is held static across simulations (live mode is foundation-laid but not yet auto-feeding).</li>
-          <li><strong>Live weather forecasts</strong> — climate is bucketed (mild / hot / altitude), not pulled from forecast APIs.</li>
+          <li><strong>News + social signals</strong> — locker-room turmoil, federation politics, and tournament-day weather drama aren't modelled beyond the structured feeds.</li>
+          <li><strong>True per-shot xG</strong> — our post-match stats proxy uses shots-on-target + possession + corner deltas; we deliberately don't claim shot quality information the providers don't expose.</li>
+          <li><strong>Historical Elo baseline mid-tournament</strong> — pre-tournament Elo is held static; matchday intelligence adjusts the <em>effective</em> Elo per match but doesn't retrain the underlying rating.</li>
         </ul>
+        <p class="muted small" style="margin-top:10px">
+          Live matchday intelligence (injuries, weather, lineups, post-match stats proxy) <em>does</em> now auto-feed
+          the simulator via <code>scripts/live/apply_matchday_adjustments.py</code>. Aggregate cap per team-match is
+          ±35 Elo (excluding live form delta); grand total with live form is ±45. Every component is logged to
+          <code>data/live/matchday_intelligence_log.jsonl</code>.
+        </p>
         <p>
           That's why the top contender doesn't exceed ~25% even with all the modelling
           improvements. The World Cup is structurally an upset machine.
@@ -253,6 +262,8 @@
           <li><strong>R32 bracket + Annex C lookup table (495 entries)</strong> — FIFA Regulations Annex C.</li>
           <li><strong>Squad market values</strong> — Transfermarkt via Sportingpedia / GiveMeSport (May-June 2026).</li>
           <li><strong>Stadium / city metadata</strong> — coordinates, altitude, climate for all 16 host cities.</li>
+          <li><strong>Live results, injuries, lineups, post-match stats</strong> — <a href="https://www.api-football.com" target="_blank" rel="noopener">API-Football</a> (Pro plan) — fetcher cadence is 10 min for results, 3h for matchday intelligence.</li>
+          <li><strong>Live weather forecasts</strong> — <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a> (no key, fair-use ~10k req/day) — 16-day forecast horizon with static climate bucket as fallback.</li>
         </ul>
       </div>
     </section>
