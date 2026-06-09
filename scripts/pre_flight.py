@@ -543,6 +543,115 @@ def phase_11_provider():
         check("provider tests pass", rc == 0)
 
 
+def phase_12_matchday_intel():
+    """Stream B integration: injuries + weather + lineups + stats proxy."""
+    section("Phase 12 · Matchday intelligence (Stream B)")
+
+    LIVE_DIR = ROOT / "scripts" / "live"
+    TESTS_DIR = ROOT / "tests" / "live"
+
+    # ─ Module presence (B.1-B.5)
+    modules = {
+        "apply_matchday_adjustments.py": "B.1 scaffold + audit log",
+        "weather_adjustments.py":        "B.2 weather pure math",
+        "fetch_weather.py":              "B.2 Open-Meteo adapter",
+        "injury_adjustments.py":         "B.3 injury helpers",
+        "fetch_injuries.py":             "B.3 API-Football adapter",
+        "lineup_adjustments.py":         "B.4 lineup heuristics",
+        "fetch_lineups.py":              "B.4 API-Football adapter",
+        "stats_proxy_adjustments.py":    "B.5 stats proxy math",
+        "fetch_match_stats.py":          "B.5 API-Football adapter",
+    }
+    for fname, label in modules.items():
+        check(f"module exists: {fname} ({label})",
+              (LIVE_DIR / fname).exists())
+
+    # ─ Locked caps in apply_matchday_adjustments
+    amd = (LIVE_DIR / "apply_matchday_adjustments.py").read_text()
+    cap_constants = {
+        "INJURY_CAP_NORMAL": "25.0",
+        "INJURY_CAP_EXTREME": "35.0",
+        "LINEUP_CAP": "20.0",
+        "WEATHER_CAP": "15.0",
+        "STATS_CAP_PER_MATCH": "8.0",
+        "STATS_CAP_GROUP_TOTAL": "20.0",
+        "AGGREGATE_MATCHDAY_CAP": "35.0",
+        "GRAND_TOTAL_CAP": "45.0",
+    }
+    for name, value in cap_constants.items():
+        check(f"cap constant locked: {name} == {value}",
+              re.search(rf"^{name}\s*=\s*{re.escape(value)}\b", amd, re.M) is not None)
+
+    # ─ Single integration point in 03_simulate.py
+    sim = (ROOT / "scripts" / "03_simulate.py").read_text()
+    check("simulator imports get_team_elo_adjustment",
+          "from apply_matchday_adjustments import get_team_elo_adjustment" in sim)
+    check("simulator no longer adds injury_adjustments to elo_eff_base",
+          "+ injury_adjustments.get(t, 0.0)" not in sim)
+    check("simulator includes _matchday_intel(t) in elo_eff_base",
+          "_matchday_intel(t)" in sim)
+
+    # ─ Stats proxy is locked-NOT-xG
+    sp = (LIVE_DIR / "stats_proxy_adjustments.py").read_text()
+    check("stats proxy module asserts NOT xG in docstring",
+          re.search(r"\b(not|never)\b[^\n]*\bxG\b", sp, re.I) is not None)
+    fms = (LIVE_DIR / "fetch_match_stats.py").read_text()
+    check("stats fetcher sets true_xg_available=False",
+          "true_xg_available" in fms and "False" in fms)
+
+    # ─ Workflow split (B.8)
+    slow_wf = ROOT / ".github" / "workflows" / "matchday-intel-slow.yml"
+    check("slow workflow exists (B.8)", slow_wf.exists())
+    if slow_wf.exists():
+        wf_txt = slow_wf.read_text()
+        check("slow workflow runs every 3h",
+              "'0 */3 * * *'" in wf_txt)
+        check("slow workflow calls all four fetchers",
+              all(s in wf_txt for s in (
+                  "fetch_injuries.py", "fetch_weather.py",
+                  "fetch_lineups.py", "fetch_match_stats.py")))
+        check("slow workflow runs apply_matchday_adjustments after fetchers",
+              "apply_matchday_adjustments.py" in wf_txt)
+        check("slow workflow exposes API_FOOTBALL_KEY",
+              re.search(r"API_FOOTBALL_KEY:\s*\$\{\{\s*secrets\.API_FOOTBALL_KEY\s*\}\}",
+                        wf_txt) is not None)
+        check("slow workflow uses separate concurrency group",
+              "wc26-matchday-intel-slow" in wf_txt)
+
+    # ─ Dashboard surfacing (B.7)
+    js = (DASH / "app.js").read_text()
+    idx = (DASH / "index.html").read_text()
+    check("dashboard fetches matchday_intelligence.json",
+          "./matchday_intelligence.json" in js)
+    check("dashboard renders renderMatchdayIntelligence",
+          "renderMatchdayIntelligence" in js)
+    check("dashboard has matchday-intel section in HTML",
+          'id="matchday-intel"' in idx)
+
+    # ─ Audit log presence in module + dashboard JSON contract
+    check("apply_matchday writes append-only audit log",
+          "append_audit_log" in amd and 'open("a"' in amd or
+          ".jsonl" in amd)  # accept either signal
+    check("dashboard matchday_intelligence.json baseline committed",
+          (DASH / "matchday_intelligence.json").exists())
+
+    # ─ Stream B unit tests pass
+    test_files = [
+        "test_apply_matchday_adjustments.py",
+        "test_weather_adjustments.py",
+        "test_injury_adjustments.py",
+        "test_lineup_adjustments.py",
+        "test_stats_proxy.py",
+    ]
+    for tf in test_files:
+        tp = TESTS_DIR / tf
+        check(f"test file exists: {tf}", tp.exists())
+        if tp.exists():
+            rc = subprocess.run([sys.executable, str(tp)],
+                                capture_output=True, text=True).returncode
+            check(f"tests pass: {tf}", rc == 0)
+
+
 # ─── Phase 10 / report ─────────────────────────────────────────────────────
 def report():
     print("\n" + "=" * 70)
@@ -576,6 +685,7 @@ def main():
     phase_9_public_copy()
     stress_tests()
     phase_11_provider()
+    phase_12_matchday_intel()
     report()
 
 
