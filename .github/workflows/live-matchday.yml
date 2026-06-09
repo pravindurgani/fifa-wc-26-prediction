@@ -93,33 +93,61 @@ jobs:
           echo "provider=$PROVIDER" >> "$GITHUB_OUTPUT"
           echo "Provider for this run: $PROVIDER"
 
-      - name: Rebuild fixture map if provider changed
+      - name: Rebuild fixture map (provider switch OR knockout draw resolved)
         if: steps.gate.outputs.skip != 'true'
         env:
           API_FOOTBALL_KEY:  ${{ secrets.API_FOOTBALL_KEY }}
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          PROVIDER: ${{ steps.provider.outputs.provider }}
         run: |
           set +e
-          PROVIDER="${{ steps.provider.outputs.provider }}"
           MAP=data/live/provider_fixture_map.json
-          # Compare the provider baked into the existing map vs the requested one.
-          # jq is preinstalled on ubuntu-latest; -r prints raw value, // '' = default if missing.
-          CURRENT=$(jq -r '.provider // ""' "$MAP" 2>/dev/null || echo "")
-          if [ "$CURRENT" = "$PROVIDER" ]; then
-            echo "Fixture map already targets $PROVIDER — skipping rebuild."
+          # ── Trigger 1: provider switched (e.g. football_data → api_football)
+          CURRENT_PROVIDER=$(jq -r '.provider // ""' "$MAP" 2>/dev/null || echo "")
+          PROVIDER_MISMATCH="no"
+          if [ "$CURRENT_PROVIDER" != "$PROVIDER" ]; then
+            PROVIDER_MISMATCH="yes"
+          fi
+          # ── Trigger 2 (A.5): knockout draw has resolved — the map only has
+          # group fixtures and the live state indicates the group stage is
+          # finishing (>= 48 matches locked, i.e. matchday 3 well underway).
+          # Rebuild proactively so M73-M104 get mapped before R32 kicks off.
+          KNOCKOUT_MAPPED=$(jq -r '.coverage.knockout_mapped // 0' "$MAP" 2>/dev/null || echo "0")
+          KNOCKOUT_TOTAL=$(jq -r '.coverage.knockout_total // 0' "$MAP" 2>/dev/null || echo "0")
+          COMPLETED=$(jq -r '.completed_matches_count // 0' dashboard/live_state.json 2>/dev/null || echo "0")
+          KNOCKOUT_NEEDED="no"
+          if [ "$KNOCKOUT_MAPPED" -lt "$KNOCKOUT_TOTAL" ] && [ "$COMPLETED" -ge 48 ]; then
+            KNOCKOUT_NEEDED="yes"
+          fi
+
+          if [ "$PROVIDER_MISMATCH" = "no" ] && [ "$KNOCKOUT_NEEDED" = "no" ]; then
+            echo "Fixture map up-to-date "
+            echo "  provider: have='$CURRENT_PROVIDER' want='$PROVIDER' (match)"
+            echo "  knockout: $KNOCKOUT_MAPPED/$KNOCKOUT_TOTAL mapped, $COMPLETED group matches locked"
             exit 0
           fi
-          echo "Fixture map provider mismatch: have='$CURRENT' want='$PROVIDER' — rebuilding."
-          # Back up the current map so we can roll back if the rebuild yields too few fixtures.
+
+          echo "Rebuilding fixture map:"
+          [ "$PROVIDER_MISMATCH" = "yes" ] && echo "  reason: provider mismatch (have='$CURRENT_PROVIDER' want='$PROVIDER')"
+          [ "$KNOCKOUT_NEEDED" = "yes" ] && echo "  reason: knockout draw should be resolvable ($COMPLETED matches locked, $KNOCKOUT_MAPPED/$KNOCKOUT_TOTAL knockouts mapped)"
+
+          # Back up the current map so we can roll back if rebuild yields fewer group fixtures.
           if [ -f "$MAP" ]; then cp "$MAP" "${MAP}.bak"; fi
           python scripts/live/build_provider_fixture_map.py \
             --provider "$PROVIDER" --season 2026 --league-id 1 --write
           RC=$?
-          if [ $RC -ne 0 ] && [ -f "${MAP}.bak" ]; then
-            echo "Rebuild failed — restoring previous fixture map."
-            mv "${MAP}.bak" "$MAP"
+          # Sanity-check the new map didn't regress group coverage. If it did,
+          # restore the backup — the old map is strictly better than a broken
+          # new one.
+          NEW_GROUP=$(jq -r '.coverage.group_mapped // 0' "$MAP" 2>/dev/null || echo "0")
+          OLD_GROUP=$(jq -r '.coverage.group_mapped // 0' "${MAP}.bak" 2>/dev/null || echo "0")
+          if [ $RC -ne 0 ] || { [ "$NEW_GROUP" -lt "$OLD_GROUP" ] && [ -f "${MAP}.bak" ]; }; then
+            echo "Rebuild failed or regressed group coverage ($OLD_GROUP → $NEW_GROUP) — restoring previous map."
+            [ -f "${MAP}.bak" ] && mv "${MAP}.bak" "$MAP"
           else
             rm -f "${MAP}.bak"
+            NEW_KNOCKOUT=$(jq -r '.coverage.knockout_mapped // 0' "$MAP" 2>/dev/null || echo "0")
+            echo "Rebuild OK: $NEW_GROUP group + $NEW_KNOCKOUT knockout = $((NEW_GROUP + NEW_KNOCKOUT)) fixtures mapped"
           fi
           exit 0
 
