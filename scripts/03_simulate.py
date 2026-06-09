@@ -36,6 +36,7 @@ RAW = ROOT / "data" / "raw"
 PROC = ROOT / "data" / "processed"
 MODELS = ROOT / "models"
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "live"))   # B.1: for apply_matchday_adjustments
 from tiebreakers import rank_group, rank_third_placed
 
 HOST_COUNTRIES = {"Mexico", "United States", "Canada"}
@@ -598,11 +599,26 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
 
     confed_map = CONFED_MAP
 
+    # B.1: matchday-intelligence integration point. The new module returns
+    # 0.0 for every team in B.1 (weather/lineups/stats feeds not populated
+    # yet) so this addition is provably a no-op until B.2-B.5 ship.
+    # In B.3 the legacy `injury_adjustments` dict will be removed and
+    # injuries will flow through matchday_intel instead — single source of
+    # truth with full audit-log capture.
+    try:
+        from apply_matchday_adjustments import get_team_elo_adjustment as _matchday_intel
+    except ImportError:
+        # If the module is missing for any reason (test env, partial
+        # checkout), fail closed: zero adjustment.
+        def _matchday_intel(team, match_id=None, reload=False):
+            return 0.0
+
     elo_eff_base = {
         t: (elo.get(t, 1500)
             + squad_value_elo(t, squad_vals, sv_log_mean, sv_log_std, cfg)
             + injury_adjustments.get(t, 0.0)
-            + live_team_state.get(t, 0.0))   # mid-tournament soft Elo delta
+            + live_team_state.get(t, 0.0)   # mid-tournament soft Elo delta
+            + _matchday_intel(t))           # B.1: weather/lineups/stats (no-op until B.2-B.5)
         for t in all_teams
     }
 
