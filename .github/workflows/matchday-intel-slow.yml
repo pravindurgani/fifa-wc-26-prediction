@@ -2,6 +2,16 @@ name: Matchday intelligence (slow cadence)
 
 # Runs every 3 hours during the tournament window.
 #
+# ─── Personal-branch operating mode ────────────────────────────────────────
+# The full Stream B implementation (fetchers + apply_matchday_adjustments.py
+# + tests) lives on feature/matchday-intelligence and is intentionally NOT
+# merged to main. To keep that as a personal/research branch while still
+# benefiting from scheduled automation, this workflow file (registered on
+# main so the cron fires) explicitly checks out the feature branch via
+# env.FEATURE_REF and pushes commits back to it. When the feature branch is
+# eventually merged to main, set FEATURE_REF to "main" (or remove the `ref:`
+# block on actions/checkout and the explicit ref on git push).
+#
 # This is the SLOW companion to live-matchday.yml (which fires every 10 min
 # for results + simulator). The matchday-intel layers don't change minute-
 # to-minute:
@@ -45,6 +55,11 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  # Single source of truth for the branch this workflow operates on.
+  # Set to "main" once feature/matchday-intelligence merges.
+  FEATURE_REF: feature/matchday-intelligence
+
 jobs:
   matchday-intel:
     runs-on: ubuntu-latest
@@ -52,7 +67,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          # Personal-branch mode: pull the branch that actually has the
+          # Stream B scripts. fetch-depth: 0 so the subsequent push has the
+          # full history needed for a clean rebase.
+          ref: ${{ env.FEATURE_REF }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -182,9 +201,9 @@ jobs:
             exit 0
           fi
           git commit -m "matchday-intel: refresh @ $(date -u +%Y-%m-%dT%H:%MZ)"
-          # Same push-race protection as live-matchday.yml — rebase on origin
-          # before pushing so a fast-workflow tick committing in parallel doesn't
-          # race-condition our slow update out of existence.
-          git pull --rebase origin main || echo "Rebase failed — pushing anyway."
-          git push || echo "Push failed — will retry next 3h tick."
+          # Push-race protection: rebase against the SAME branch we push to
+          # (FEATURE_REF), not main. If another tick committed to the feature
+          # branch in parallel we want to rebase on top of it, not on main.
+          git pull --rebase origin "$FEATURE_REF" || echo "Rebase failed — pushing anyway."
+          git push origin "HEAD:$FEATURE_REF" || echo "Push failed — will retry next 3h tick."
           exit 0
