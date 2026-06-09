@@ -1,0 +1,813 @@
+{
+  "_probe_metadata": {
+    "tournament": "World Cup 2022",
+    "league_id": 1,
+    "season": 2022,
+    "total_fixtures_returned": 64,
+    "knockout_fixtures_kept": 16,
+    "probed_at_utc": "2026-06-09T22:18:55Z",
+    "note": "Sanitized via scripts/research/probe_apifootball_knockouts.py. Only fields needed to ground the A.1-A.3 schema were kept."
+  },
+  "fixtures": [
+    {
+      "fixture": {
+        "id": 976533,
+        "date": "2022-12-03T15:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 1118,
+          "name": "Netherlands",
+          "winner": true
+        },
+        "away": {
+          "id": 2384,
+          "name": "USA",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 3,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 976642,
+        "date": "2022-12-03T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 26,
+          "name": "Argentina",
+          "winner": true
+        },
+        "away": {
+          "id": 20,
+          "name": "Australia",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 976643,
+        "date": "2022-12-04T15:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 2,
+          "name": "France",
+          "winner": true
+        },
+        "away": {
+          "id": 24,
+          "name": "Poland",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 3,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 976534,
+        "date": "2022-12-04T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 10,
+          "name": "England",
+          "winner": true
+        },
+        "away": {
+          "id": 13,
+          "name": "Senegal",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 3,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 977344,
+        "date": "2022-12-05T15:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 12,
+          "name": "Japan",
+          "winner": false
+        },
+        "away": {
+          "id": 3,
+          "name": "Croatia",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 1
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 1,
+          "away": 3
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 977705,
+        "date": "2022-12-05T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 6,
+          "name": "Brazil",
+          "winner": true
+        },
+        "away": {
+          "id": 17,
+          "name": "South Korea",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 4,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 4,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 4,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 977345,
+        "date": "2022-12-06T15:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 31,
+          "name": "Morocco",
+          "winner": true
+        },
+        "away": {
+          "id": 9,
+          "name": "Spain",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 0,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 0,
+          "away": 0
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 3,
+          "away": 0
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 977706,
+        "date": "2022-12-06T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 27,
+          "name": "Portugal",
+          "winner": true
+        },
+        "away": {
+          "id": 15,
+          "name": "Switzerland",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 6,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 6,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 978072,
+        "date": "2022-12-09T15:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 3,
+          "name": "Croatia",
+          "winner": true
+        },
+        "away": {
+          "id": 6,
+          "name": "Brazil",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 0,
+          "away": 0
+        },
+        "extratime": {
+          "home": 1,
+          "away": 1
+        },
+        "penalty": {
+          "home": 4,
+          "away": 2
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 977794,
+        "date": "2022-12-09T19:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 1118,
+          "name": "Netherlands",
+          "winner": false
+        },
+        "away": {
+          "id": 26,
+          "name": "Argentina",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 2
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 2
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 3,
+          "away": 4
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 978088,
+        "date": "2022-12-10T15:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 31,
+          "name": "Morocco",
+          "winner": true
+        },
+        "away": {
+          "id": 27,
+          "name": "Portugal",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 978036,
+        "date": "2022-12-10T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 10,
+          "name": "England",
+          "winner": false
+        },
+        "away": {
+          "id": 2,
+          "name": "France",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 2
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 2
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 978279,
+        "date": "2022-12-13T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Semi-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 26,
+          "name": "Argentina",
+          "winner": true
+        },
+        "away": {
+          "id": 3,
+          "name": "Croatia",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 3,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 978488,
+        "date": "2022-12-14T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Semi-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 2,
+          "name": "France",
+          "winner": true
+        },
+        "away": {
+          "id": 31,
+          "name": "Morocco",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 979138,
+        "date": "2022-12-17T15:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "3rd Place Final"
+      },
+      "teams": {
+        "home": {
+          "id": 3,
+          "name": "Croatia",
+          "winner": true
+        },
+        "away": {
+          "id": 31,
+          "name": "Morocco",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 979139,
+        "date": "2022-12-18T15:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 1,
+        "season": 2022,
+        "round": "Final"
+      },
+      "teams": {
+        "home": {
+          "id": 26,
+          "name": "Argentina",
+          "winner": true
+        },
+        "away": {
+          "id": 2,
+          "name": "France",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 3
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 2
+        },
+        "extratime": {
+          "home": 1,
+          "away": 1
+        },
+        "penalty": {
+          "home": 4,
+          "away": 2
+        }
+      }
+    }
+  ]
+}

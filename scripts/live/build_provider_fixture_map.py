@@ -41,6 +41,37 @@ from fetch_results import (  # noqa: E402
 )
 
 
+# ── Round-label classifier ────────────────────────────────────────────────
+# Confirmed via A.0 probe against Euro 2024 + WC 2022:
+#   "Round of 16", "Quarter-finals", "Semi-finals", "Final", "3rd Place Final"
+# WC2026 introduces a Round of 32 (48-team format) — API-Football has not
+# exposed this round before, so we accept multiple plausible labels.
+# Substring + lowercase matching tolerates capitalisation drift.
+# Hoisted to module scope so tests can import it.
+def classify_round(round_label: str | None) -> str | None:
+    """Map a provider round label to our internal phase code, or None for group/unknown.
+
+    Phase codes: r32, r16, qf, sf, third_place, final.
+    """
+    if not round_label:
+        return None
+    rl = round_label.lower()
+    # Most specific first: "3rd Place Final" must beat "Final".
+    if "3rd place" in rl or "third place" in rl:
+        return "third_place"
+    if "round of 32" in rl or "1/16" in rl:
+        return "r32"
+    if "round of 16" in rl or "1/8" in rl:
+        return "r16"
+    if "quarter" in rl:
+        return "qf"
+    if "semi" in rl:
+        return "sf"
+    if "final" in rl:  # bare "Final" — must come after the more specific checks above
+        return "final"
+    return None  # group stage or unknown
+
+
 def fetch_apifootball_fixtures(api_key: str, league_id: str, season: str) -> list[dict]:
     headers = {"x-apisports-key": api_key, "Accept": "application/json"}
     url = f"{APIFOOTBALL_BASE}/fixtures?league={league_id}&season={season}"
@@ -169,8 +200,40 @@ def main() -> int:
     cfg = json.loads((RAW / "wc2026_config.json").read_text())
     schedule = cfg["group_stage_schedule"]
     if len(schedule) != 72:
-        print(f"[builder] FATAL: expected 72 fixtures in wc2026_config, got {len(schedule)}")
+        print(f"[builder] FATAL: expected 72 group fixtures in wc2026_config, got {len(schedule)}")
         return 1
+
+    # Knockout bracket — empirically confirmed schema (probe A.0): API-Football
+    # exposes all 32 knockout fixtures with `league.round` labels like
+    # "Round of 16" / "Quarter-finals" / "Semi-finals" / "3rd Place Final" /
+    # "Final". Pre-draw, the team-name fields hold placeholder strings
+    # ("Winner Group A", "Runner Up Group B", etc.) so we cannot map by
+    # (home, away) name match the way we do for group fixtures. Instead we
+    # pair by round + chronological order — both sides use the same FIFA
+    # schedule, so position-in-round is a stable invariant.
+    bracket_path = RAW / "knockout_bracket_2026.json"
+    knockout_schedule: list[dict] = []
+    if bracket_path.exists():
+        bracket = json.loads(bracket_path.read_text())
+        # WC2026 phase → list of internal matches in canonical order
+        for s in bracket.get("r32_slots", []):
+            knockout_schedule.append({"m": s["match_num"], "date": s["date"], "phase": "r32"})
+        for s in bracket.get("r16_bracket", []):
+            knockout_schedule.append({"m": s["match_num"], "date": s["date"], "phase": "r16"})
+        for s in bracket.get("qf_bracket", []):
+            knockout_schedule.append({"m": s["match_num"], "date": s["date"], "phase": "qf"})
+        for s in bracket.get("sf_bracket", []):
+            knockout_schedule.append({"m": s["match_num"], "date": s["date"], "phase": "sf"})
+        ft = bracket.get("final_and_third_place") or {}
+        if "third_place" in ft:
+            tp = ft["third_place"]
+            knockout_schedule.append({"m": tp["match_num"], "date": tp["date"], "phase": "third_place"})
+        if "final" in ft:
+            fn = ft["final"]
+            knockout_schedule.append({"m": fn["match_num"], "date": fn["date"], "phase": "final"})
+        print(f"[builder] knockout bracket loaded: {len(knockout_schedule)} fixtures (M73-M{72 + len(knockout_schedule)})")
+    else:
+        print(f"[builder] no knockout bracket at {bracket_path} — group-stage only")
 
     # Build a (home, away) -> [(date, match_id), ...] index so we can match
     # tolerantly across the UTC↔local-date boundary (NA evening matches roll
@@ -201,6 +264,9 @@ def main() -> int:
                 continue
         return best
 
+
+    # classify_round is at module scope (above) for testability.
+
     league_id = args.league_id or "1"
 
     if args.provider == "api_football":
@@ -213,12 +279,16 @@ def main() -> int:
         except Exception as e:
             print(f"[builder] provider fetch failed: {type(e).__name__}: {e}")
             return 1
-        # Normalise to a common shape: {id, home, away, date}
+        # Normalise to a common shape: {id, home, away, date, round, kickoff}
+        # We keep `round` + `kickoff` for knockout pairing — group fixtures
+        # ignore them, knockout fixtures need them to find their slot.
         fixtures = [{
             "id": str((f.get("fixture") or {}).get("id", "")),
             "home_raw": ((f.get("teams") or {}).get("home") or {}).get("name", ""),
             "away_raw": ((f.get("teams") or {}).get("away") or {}).get("name", ""),
             "date": ((f.get("fixture") or {}).get("date") or "")[:10],
+            "kickoff": (f.get("fixture") or {}).get("date") or "",
+            "round": (f.get("league") or {}).get("round", ""),
         } for f in fixtures_raw]
     elif args.provider == "football_data":
         token = get_football_data_token()
@@ -231,11 +301,25 @@ def main() -> int:
         except Exception as e:
             print(f"[builder] provider fetch failed: {type(e).__name__}: {e}")
             return 1
+        # football-data.org exposes `stage` (LAST_16, QUARTER_FINALS, etc.) —
+        # translate to the same round-label shape API-Football uses so the
+        # classifier handles both providers uniformly.
+        FD_STAGE_TO_ROUND = {
+            "GROUP_STAGE": "Group Stage",
+            "LAST_32": "Round of 32",
+            "LAST_16": "Round of 16",
+            "QUARTER_FINALS": "Quarter-finals",
+            "SEMI_FINALS": "Semi-finals",
+            "THIRD_PLACE": "3rd Place Final",
+            "FINAL": "Final",
+        }
         fixtures = [{
             "id": str(m.get("id", "")),
             "home_raw": (m.get("homeTeam") or {}).get("name", ""),
             "away_raw": (m.get("awayTeam") or {}).get("name", ""),
             "date": (m.get("utcDate") or "")[:10],
+            "kickoff": m.get("utcDate") or "",
+            "round": FD_STAGE_TO_ROUND.get(m.get("stage") or "", m.get("stage") or ""),
         } for m in fixtures_raw]
     else:
         print(f"[builder] {args.provider} adapter not yet implemented")
@@ -243,55 +327,138 @@ def main() -> int:
 
     print(f"[builder] provider returned {len(fixtures)} fixtures")
 
+    # Split provider fixtures by phase so we can use different matching
+    # strategies for group (name-based) vs knockout (round + ordered pairing).
+    group_fixtures: list[dict] = []
+    knockout_fixtures_by_phase: dict[str, list[dict]] = {}
+    for f in fixtures:
+        phase = classify_round(f.get("round"))
+        if phase is None:
+            group_fixtures.append(f)
+        else:
+            knockout_fixtures_by_phase.setdefault(phase, []).append(f)
+
+    print(f"[builder] provider fixtures split: "
+          f"{len(group_fixtures)} group-stage, "
+          f"{sum(len(v) for v in knockout_fixtures_by_phase.values())} knockout "
+          f"(across phases: {sorted(knockout_fixtures_by_phase.keys())})")
+
     mapped: list[dict] = []
     unmapped_provider: list[dict] = []
-    for f in fixtures:
+
+    # ── Group stage: name-based lookup (unchanged from v1) ───────────────
+    for f in group_fixtures:
         provider_id = f["id"]
         home = normalize_team(f["home_raw"])
         away = normalize_team(f["away_raw"])
         date = f["date"]
-
         m_id = lookup(home, away, date)
         if m_id is None:
             unmapped_provider.append({
-                "provider_fixture_id": provider_id,
+                "provider_fixture_id": provider_id, "phase": "group",
                 "date": date, "home": home, "away": away,
                 "raw_home": f["home_raw"], "raw_away": f["away_raw"],
             })
             continue
         mapped.append({
-            "match_id": m_id,
-            "provider_fixture_id": provider_id,
-            "home": home, "away": away, "date": date,
+            "match_id": m_id, "provider_fixture_id": provider_id,
+            "home": home, "away": away, "date": date, "phase": "group",
         })
 
-    # Which of our 72 are NOT covered?
-    mapped_internal = {x["match_id"] for x in mapped}
-    unmapped_internal = [s for s in schedule if s["m"] not in mapped_internal]
+    # ── Knockout: pair by phase + chronological order ────────────────────
+    # Strategy: within each round, both internal schedule and provider feed
+    # are ordered by FIFA's published calendar. Sort each side by (date,
+    # tiebreaker) and pair index-for-index. This works pre-draw (placeholder
+    # team names) because we ignore names entirely for knockouts.
+    knockout_by_phase: dict[str, list[dict]] = {}
+    for ks in knockout_schedule:
+        knockout_by_phase.setdefault(ks["phase"], []).append(ks)
 
-    print(f"[builder] mapped: {len(mapped)} / 72 group fixtures")
+    for phase, internal_list in knockout_by_phase.items():
+        provider_list = knockout_fixtures_by_phase.get(phase, [])
+        if not provider_list:
+            # No provider fixtures in this round yet — perfectly normal pre-draw.
+            print(f"[builder] {phase}: no provider fixtures yet "
+                  f"({len(internal_list)} internal awaiting upstream resolution)")
+            continue
+        # Stable sort on both sides. `m` is monotonic per FIFA's M-numbering;
+        # provider `kickoff` ISO string sorts lexicographically.
+        internal_sorted = sorted(internal_list, key=lambda x: (x["date"], x["m"]))
+        provider_sorted = sorted(provider_list, key=lambda x: (x["date"], x["kickoff"], x["id"]))
+
+        if len(provider_sorted) != len(internal_sorted):
+            print(f"[builder] WARN {phase}: provider has {len(provider_sorted)} fixtures "
+                  f"but bracket has {len(internal_sorted)}. Pairing the overlap.")
+
+        for ix, internal in enumerate(internal_sorted):
+            if ix >= len(provider_sorted):
+                break  # provider hasn't published this slot yet
+            f = provider_sorted[ix]
+            mapped.append({
+                "match_id": internal["m"],
+                "provider_fixture_id": f["id"],
+                # For knockouts pre-draw, home/away are placeholders — store
+                # whatever the provider currently has so the fetcher's name
+                # debug logs remain useful once teams resolve.
+                "home": normalize_team(f["home_raw"]) or f["home_raw"] or "TBD",
+                "away": normalize_team(f["away_raw"]) or f["away_raw"] or "TBD",
+                "date": internal["date"],
+                "phase": phase,
+            })
+
+        # Any leftover provider fixtures in this phase that didn't pair?
+        for extra in provider_sorted[len(internal_sorted):]:
+            unmapped_provider.append({
+                "provider_fixture_id": extra["id"], "phase": phase,
+                "date": extra["date"], "home": extra["home_raw"], "away": extra["away_raw"],
+                "raw_home": extra["home_raw"], "raw_away": extra["away_raw"],
+            })
+
+    # ── Coverage reporting ───────────────────────────────────────────────
+    mapped_internal = {x["match_id"] for x in mapped}
+    expected_match_ids = {s["m"] for s in schedule} | {ks["m"] for ks in knockout_schedule}
+    unmapped_internal = [
+        {"m": m, "date": "?"} for m in sorted(expected_match_ids - mapped_internal)
+    ]
+
+    mapped_group = sum(1 for x in mapped if x.get("phase") == "group")
+    mapped_knockout = sum(1 for x in mapped if x.get("phase") != "group")
+    expected_total = 72 + len(knockout_schedule)
+    print(f"[builder] mapped: {len(mapped)} / {expected_total}  "
+          f"(group: {mapped_group}/72, knockout: {mapped_knockout}/{len(knockout_schedule)})")
     print(f"[builder] provider fixtures we couldn't map: {len(unmapped_provider)}")
     print(f"[builder] internal fixtures still unmapped: {len(unmapped_internal)}")
 
     for u in unmapped_provider[:5]:
-        print(f"  ? provider: {u['date']} {u['home']} vs {u['away']} "
-              f"(raw: {u['raw_home']!r} vs {u['raw_away']!r})")
+        print(f"  ? provider {u.get('phase', '?')}: {u['date']} "
+              f"{u.get('home', '?')} vs {u.get('away', '?')} (raw: {u['raw_home']!r} vs {u['raw_away']!r})")
     for s in unmapped_internal[:5]:
-        print(f"  ? internal: M{s['m']} {s['date']} {s['home']} vs {s['away']}")
+        print(f"  ? internal: M{s['m']}")
 
-    if len(mapped) < 72:
-        print(f"[builder] WARN: only mapped {len(mapped)}/72 group fixtures. "
+    if mapped_group < 72:
+        print(f"[builder] WARN: only {mapped_group}/72 group fixtures mapped. "
               "Check team aliases in fetch_results.TEAM_ALIAS.")
     else:
         print(f"[builder] ✓ all 72 group fixtures mapped")
+    if knockout_schedule:
+        if mapped_knockout == len(knockout_schedule):
+            print(f"[builder] ✓ all {len(knockout_schedule)} knockout fixtures mapped")
+        elif mapped_knockout > 0:
+            print(f"[builder] ⏳ {mapped_knockout}/{len(knockout_schedule)} knockouts mapped "
+                  f"(provider populates the rest as the bracket resolves)")
 
     if not args.write:
         print("[builder] dry-run — no file written. Re-run with --write to commit.")
         return 0
 
-    # Refuse to write a useless map unless explicitly overridden
-    if len(mapped) < args.min_mapped and not args.allow_partial:
-        print(f"\n[builder] REFUSING TO WRITE: only {len(mapped)}/{args.min_mapped} fixtures mapped.")
+    # The `--min-mapped` floor protects against writing a useless map.
+    # Default 72 = group-stage-only writes are fine (pre-tournament + first
+    # half of tournament). Once the knockout bracket resolves, the next
+    # rebuild will pick up M73-M104 and the file grows automatically.
+    # If group-stage mapping fails for some reason (alias drift, provider
+    # outage), refuse to overwrite — partial maps cause silent drops.
+    if mapped_group < args.min_mapped and not args.allow_partial:
+        print(f"\n[builder] REFUSING TO WRITE: only {mapped_group}/{args.min_mapped} group fixtures mapped.")
         print("[builder] A partial map is worse than no map — the fetcher's fuzzy fallback")
         print("[builder]   handles missing IDs gracefully, but a stub map with 0 entries")
         print("[builder]   will be treated as authoritative and cause every fixture to be unmapped.")
@@ -312,14 +479,23 @@ def main() -> int:
         "season": args.season,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "fixtures": sorted(mapped, key=lambda x: x["match_id"]),
+        # Audit fields — useful for the workflow's "should I rebuild?" check.
+        "coverage": {
+            "group_mapped": mapped_group,
+            "group_total": 72,
+            "knockout_mapped": mapped_knockout,
+            "knockout_total": len(knockout_schedule),
+            "total_mapped": len(mapped),
+            "total_expected": 72 + len(knockout_schedule),
+        },
         "unmapped_internal_count": len(unmapped_internal),
         "unmapped_provider_count": len(unmapped_provider),
     }
     out_path = LIVE / "provider_fixture_map.json"
     atomic_write_json(out_path, out)
     print(f"[builder] wrote {out_path}")
-    if len(mapped) < 72:
-        print(f"[builder] WARN: only {len(mapped)}/72 mapped — fetcher will fuzzy-match the rest")
+    if mapped_group < 72:
+        print(f"[builder] WARN: only {mapped_group}/72 group mapped — fetcher will fuzzy-match the rest")
         return 1
     return 0
 

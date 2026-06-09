@@ -1,0 +1,763 @@
+{
+  "_probe_metadata": {
+    "tournament": "Euro 2024",
+    "league_id": 4,
+    "season": 2024,
+    "total_fixtures_returned": 51,
+    "knockout_fixtures_kept": 15,
+    "probed_at_utc": "2026-06-09T22:18:54Z",
+    "note": "Sanitized via scripts/research/probe_apifootball_knockouts.py. Only fields needed to ground the A.1-A.3 schema were kept."
+  },
+  "fixtures": [
+    {
+      "fixture": {
+        "id": 1212958,
+        "date": "2024-06-29T16:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 15,
+          "name": "Switzerland",
+          "winner": true
+        },
+        "away": {
+          "id": 768,
+          "name": "Italy",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1214156,
+        "date": "2024-06-29T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 25,
+          "name": "Germany",
+          "winner": true
+        },
+        "away": {
+          "id": 21,
+          "name": "Denmark",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215074,
+        "date": "2024-06-30T16:00:00+00:00",
+        "status": {
+          "short": "AET",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 10,
+          "name": "England",
+          "winner": true
+        },
+        "away": {
+          "id": 773,
+          "name": "Slovakia",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 1
+        },
+        "extratime": {
+          "home": 1,
+          "away": 0
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215075,
+        "date": "2024-06-30T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 9,
+          "name": "Spain",
+          "winner": true
+        },
+        "away": {
+          "id": 1104,
+          "name": "Georgia",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 4,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 4,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215073,
+        "date": "2024-07-01T16:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 2,
+          "name": "France",
+          "winner": true
+        },
+        "away": {
+          "id": 1,
+          "name": "Belgium",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 0
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215076,
+        "date": "2024-07-01T19:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 27,
+          "name": "Portugal",
+          "winner": true
+        },
+        "away": {
+          "id": 1091,
+          "name": "Slovenia",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 0,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 0,
+          "away": 0
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 3,
+          "away": 0
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215077,
+        "date": "2024-07-02T16:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 774,
+          "name": "Romania",
+          "winner": false
+        },
+        "away": {
+          "id": 1118,
+          "name": "Netherlands",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 0,
+        "away": 3
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 0,
+          "away": 3
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1215078,
+        "date": "2024-07-02T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Round of 16"
+      },
+      "teams": {
+        "home": {
+          "id": 775,
+          "name": "Austria",
+          "winner": false
+        },
+        "away": {
+          "id": 777,
+          "name": "Türkiye",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 2
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 2
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1219688,
+        "date": "2024-07-05T16:00:00+00:00",
+        "status": {
+          "short": "AET",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 9,
+          "name": "Spain",
+          "winner": true
+        },
+        "away": {
+          "id": 25,
+          "name": "Germany",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 1
+        },
+        "extratime": {
+          "home": 1,
+          "away": 0
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1219959,
+        "date": "2024-07-05T19:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 27,
+          "name": "Portugal",
+          "winner": false
+        },
+        "away": {
+          "id": 2,
+          "name": "France",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 0,
+        "away": 0
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 0,
+          "away": 0
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 3,
+          "away": 5
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1219689,
+        "date": "2024-07-06T16:00:00+00:00",
+        "status": {
+          "short": "PEN",
+          "long": "Match Finished",
+          "elapsed": 120
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 10,
+          "name": "England",
+          "winner": true
+        },
+        "away": {
+          "id": 15,
+          "name": "Switzerland",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 1
+        },
+        "extratime": {
+          "home": 0,
+          "away": 0
+        },
+        "penalty": {
+          "home": 5,
+          "away": 3
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1220308,
+        "date": "2024-07-06T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Quarter-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 1118,
+          "name": "Netherlands",
+          "winner": true
+        },
+        "away": {
+          "id": 777,
+          "name": "Türkiye",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1225853,
+        "date": "2024-07-09T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Semi-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 9,
+          "name": "Spain",
+          "winner": true
+        },
+        "away": {
+          "id": 2,
+          "name": "France",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 2,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1227539,
+        "date": "2024-07-10T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Semi-finals"
+      },
+      "teams": {
+        "home": {
+          "id": 1118,
+          "name": "Netherlands",
+          "winner": false
+        },
+        "away": {
+          "id": 10,
+          "name": "England",
+          "winner": true
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 2
+      },
+      "score": {
+        "halftime": {
+          "home": 1,
+          "away": 1
+        },
+        "fulltime": {
+          "home": 1,
+          "away": 2
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    },
+    {
+      "fixture": {
+        "id": 1232551,
+        "date": "2024-07-14T19:00:00+00:00",
+        "status": {
+          "short": "FT",
+          "long": "Match Finished",
+          "elapsed": 90
+        }
+      },
+      "league": {
+        "id": 4,
+        "season": 2024,
+        "round": "Final"
+      },
+      "teams": {
+        "home": {
+          "id": 9,
+          "name": "Spain",
+          "winner": true
+        },
+        "away": {
+          "id": 10,
+          "name": "England",
+          "winner": false
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      },
+      "score": {
+        "halftime": {
+          "home": 0,
+          "away": 0
+        },
+        "fulltime": {
+          "home": 2,
+          "away": 1
+        },
+        "extratime": {
+          "home": null,
+          "away": null
+        },
+        "penalty": {
+          "home": null,
+          "away": null
+        }
+      }
+    }
+  ]
+}
