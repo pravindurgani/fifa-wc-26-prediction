@@ -402,6 +402,21 @@
       </div>
     </section>
 
+    <section id="matchday-intel" class="reveal">
+      <div class="section-head">
+        <h2>Matchday intelligence</h2>
+        <p class="section-desc">
+          Live adjustment layers stacked on top of the static Elo + squad-value baseline.
+          Every component is capped — see the cap row below — and the full per-tick audit log
+          is appended to <code>data/live/matchday_intelligence_log.jsonl</code> so any
+          probability move can be traced back to the source row that triggered it.
+        </p>
+      </div>
+      <div id="matchday-intel-body" class="card matchday-intel-card">
+        <div class="matchday-intel-meta muted small">Loading…</div>
+      </div>
+    </section>
+
     <section id="live-info" class="reveal">
       <div class="card live-info-card">
         <h3>How live updates work</h3>
@@ -417,9 +432,10 @@
             scorelines are edited in <code>data/live/results_2026.json</code> and pushed.
           </div>
           <div>
-            <strong>What's <em>not</em> automated yet.</strong> Injuries / lineup changes still go through the manual <code>team_adjustments.json</code> Elo
-            nudge file (deliberate — auto-news ingestion has higher false-positive risk than manual entry). Live weather forecasts are a planned add:
-            OpenWeatherMap pull → wet-bulb / dew-point → graded heat penalty, replacing the current static climate buckets.
+            <strong>Matchday-intelligence layers.</strong> Injuries pull from API-Football (manual overlay in <code>team_adjustments.json</code> still
+            stacks on top for operator-curated tier-1 calls), lineups poll <code>/fixtures/lineups</code> in the kickoff window, weather pulls Open-Meteo
+            (16-day forecast → static climate fallback past the horizon), and post-match stats come from <code>/fixtures/statistics</code>. Every layer is
+            capped, every adjustment is logged. See the Matchday Intelligence section above for the live state.
           </div>
         </div>
       </div>

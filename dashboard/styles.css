@@ -1478,3 +1478,46 @@ section#contenders .card > .filter-row {
     transform: none;
   }
 }
+
+/* ─── B.7 Matchday Intelligence ───────────────────────────────────────── */
+.matchday-intel-card { padding: 18px 20px; }
+.md-caps { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 10px; }
+.md-cap {
+  font: 500 11px / 1 var(--mono, system-ui);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-elev, #f4f4f5);
+  color: var(--text-muted, #71717a);
+  border: 1px solid var(--border, #e5e7eb);
+}
+.md-cap.strong { background: var(--text); color: var(--bg, #fff); border-color: transparent; }
+.md-feeds { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.md-feed {
+  font: 600 11px / 1 system-ui;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #e5e7eb);
+}
+.md-feed.on  { background: rgba(34, 197, 94, .12); color: #16a34a; border-color: rgba(34, 197, 94, .3); }
+.md-feed.off { background: rgba(148, 163, 184, .12); color: #64748b; border-color: rgba(148, 163, 184, .3); }
+.md-summary { margin-bottom: 12px; }
+.md-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.md-table th, .md-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  text-align: left;
+  font-size: 13px;
+}
+.md-table th { font-weight: 600; color: var(--text-muted, #71717a); }
+.md-delta.pos { color: #16a34a; font-weight: 600; }
+.md-delta.neg { color: #dc2626; font-weight: 600; }
+.md-cap-flag {
+  display: inline-block; margin-left: 4px;
+  font: 600 9px / 1 system-ui; text-transform: uppercase;
+  padding: 2px 4px; border-radius: 3px;
+  background: rgba(234, 88, 12, .15); color: #c2410c;
+}
+.md-empty { padding: 12px 0; }
+.md-warnings { margin-top: 10px; }
+.md-warnings summary { cursor: pointer; font-weight: 600; color: var(--text-muted, #71717a); }
+.md-warnings ul { margin: 6px 0 0 18px; padding: 0; }

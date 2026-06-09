@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-06-09T23:15:42.026833+00:00",
+  "schema_version": 1,
+  "caps": {
+    "injury_normal": 25.0,
+    "injury_extreme": 35.0,
+    "lineup": 20.0,
+    "weather": 15.0,
+    "stats_per_match": 8.0,
+    "stats_group_total": 20.0,
+    "aggregate_matchday": 35.0,
+    "grand_total_with_live_form": 45.0
+  },
+  "active_adjustments": [],
+  "summary": {
+    "total_active_components": 0,
+    "teams_affected": 0,
+    "matches_affected": 0,
+    "aggregate_caps_hit": 0
+  },
+  "feeds_available": {
+    "injuries": true,
+    "injuries_handled_by_this_module": true,
+    "weather": true,
+    "lineups": true,
+    "stats_proxy": true
+  },
+  "warnings": []
+}

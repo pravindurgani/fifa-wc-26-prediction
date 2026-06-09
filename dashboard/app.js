@@ -87,7 +87,7 @@ function countUp(el, target, suffix = '', duration = 900) {
 async function init() {
   const buster = `?t=${Date.now()}`;
   const fetchOptional = (url) => fetch(url + buster).then(r => r.ok ? r.json() : null).catch(() => null);
-  const [data, cal, wf, abl, travel, liveState, liveDelta, livePred] = await Promise.all([
+  const [data, cal, wf, abl, travel, liveState, liveDelta, livePred, matchdayIntel] = await Promise.all([
     fetch('./predictions.json' + buster).then(r => r.json()),
     fetchOptional('./calibration.json'),
     fetchOptional('./walk_forward.json'),
@@ -96,6 +96,7 @@ async function init() {
     fetchOptional('./live_state.json'),
     fetchOptional('./live_delta.json'),
     fetchOptional('./predictions_live.json'),
+    fetchOptional('./matchday_intelligence.json'),
   ]);
   window._data = data;
   window._cal = cal;
@@ -119,6 +120,7 @@ async function init() {
   if (wf) renderWalkForward(wf);
   if (abl) renderAblation(abl);
   if (travel) renderTravel(travel);
+  renderMatchdayIntelligence(matchdayIntel);
   renderFooter(data, liveState);
 
   // Apply deep link AFTER renders settle
@@ -1277,6 +1279,95 @@ function renderFooter(data, liveState) {
   const last = liveState?.last_updated_utc || data.generated_at || '';
   document.getElementById('footer-meta').textContent =
     `Generated ${(last || '').slice(0, 19)} UTC · ${total} simulations (${seeds} seeds × ${sps}) · model trained on ${m.n_train ? m.n_train.toLocaleString() : '—'} matches`;
+}
+
+// ───────────────────────── B.7 Matchday Intelligence ───────────────────────
+function renderMatchdayIntelligence(intel) {
+  const root = document.getElementById('matchday-intel-body');
+  if (!root) return;
+  if (!intel) {
+    root.innerHTML = `<div class="matchday-intel-meta muted small">
+      Matchday intelligence feed not yet generated. Will populate once
+      <code>scripts/live/apply_matchday_adjustments.py</code> runs.
+    </div>`;
+    return;
+  }
+
+  const caps = intel.caps || {};
+  const feeds = intel.feeds_available || {};
+  const summary = intel.summary || {};
+  const active = (intel.active_adjustments || [])
+    .filter(a => (a.total_elo_adjustment || 0) !== 0);
+
+  const feedBadge = (name, present) =>
+    `<span class="md-feed ${present ? 'on' : 'off'}">${name}: ${present ? 'on' : 'off'}</span>`;
+
+  const capRow = `
+    <div class="md-caps">
+      <span class="md-cap">injury ±${caps.injury_normal ?? 25} (extreme ±${caps.injury_extreme ?? 35})</span>
+      <span class="md-cap">weather ±${caps.weather ?? 15}</span>
+      <span class="md-cap">lineup ±${caps.lineup ?? 20}</span>
+      <span class="md-cap">stats proxy ±${caps.stats_per_match ?? 8} / group ±${caps.stats_group_total ?? 20}</span>
+      <span class="md-cap strong">aggregate ±${caps.aggregate_matchday ?? 35}</span>
+    </div>`;
+
+  const feedRow = `
+    <div class="md-feeds">
+      ${feedBadge('injuries', !!feeds.injuries)}
+      ${feedBadge('weather', !!feeds.weather)}
+      ${feedBadge('lineups', !!feeds.lineups)}
+      ${feedBadge('stats proxy', !!feeds.stats_proxy)}
+    </div>`;
+
+  const summaryRow = `
+    <div class="md-summary muted small">
+      ${summary.total_active_components ?? 0} active components ·
+      ${summary.teams_affected ?? 0} teams affected ·
+      ${summary.matches_affected ?? 0} matches affected ·
+      ${summary.aggregate_caps_hit ?? 0} aggregate caps hit ·
+      generated ${(intel.generated_at || '').slice(0, 19)} UTC
+    </div>`;
+
+  let table = '';
+  if (active.length === 0) {
+    table = `<div class="md-empty muted small">
+      No teams currently affected. Layers will populate as fetchers run
+      (injuries hourly, weather every 3h, lineups within the 4h kickoff
+      window, stats after each FT match).
+    </div>`;
+  } else {
+    const rows = active
+      .sort((a, b) => Math.abs(b.total_elo_adjustment) - Math.abs(a.total_elo_adjustment))
+      .slice(0, 25)
+      .map(a => {
+        const sign = a.total_elo_adjustment > 0 ? 'pos' : 'neg';
+        const matchLabel = a.match_id != null ? `M${a.match_id}` : 'tournament';
+        const types = [...new Set((a.components || []).map(c => c.type))].join(', ');
+        const capFlag = a.aggregate_cap_applied
+          ? `<span class="md-cap-flag" title="aggregate matchday cap clamped this team-match">cap</span>`
+          : '';
+        return `<tr>
+          <td>${confedDotHtml(a.team)}${escapeHtml(a.team)}</td>
+          <td class="muted">${matchLabel}</td>
+          <td class="md-delta ${sign}">${a.total_elo_adjustment > 0 ? '+' : ''}${a.total_elo_adjustment.toFixed(1)} Elo ${capFlag}</td>
+          <td class="muted small">${escapeHtml(types)}</td>
+        </tr>`;
+      })
+      .join('');
+    table = `<table class="md-table">
+      <thead><tr><th>Team</th><th>Scope</th><th>Adjustment</th><th>Layers</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  const warnings = (intel.warnings || []).slice(0, 5);
+  const warningBlock = warnings.length === 0
+    ? ''
+    : `<details class="md-warnings"><summary>${warnings.length} warning${warnings.length === 1 ? '' : 's'}</summary>
+        <ul>${warnings.map(w => `<li class="small muted">${escapeHtml(w.message || w.type || JSON.stringify(w))}</li>`).join('')}</ul>
+      </details>`;
+
+  root.innerHTML = capRow + feedRow + summaryRow + table + warningBlock;
 }
 
 init().catch(err => {
