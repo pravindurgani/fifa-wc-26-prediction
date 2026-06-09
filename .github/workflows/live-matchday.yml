@@ -95,9 +95,8 @@ jobs:
           PROVIDER="${{ steps.provider.outputs.provider }}"
           MAP=data/live/provider_fixture_map.json
           # Compare the provider baked into the existing map vs the requested one.
-          CURRENT=$(python -c "import json,sys;
-try: print(json.load(open('$MAP')).get('provider',''))
-except Exception: print('')" 2>/dev/null)
+          # jq is preinstalled on ubuntu-latest; -r prints raw value, // '' = default if missing.
+          CURRENT=$(jq -r '.provider // ""' "$MAP" 2>/dev/null || echo "")
           if [ "$CURRENT" = "$PROVIDER" ]; then
             echo "Fixture map already targets $PROVIDER — skipping rebuild."
             exit 0
