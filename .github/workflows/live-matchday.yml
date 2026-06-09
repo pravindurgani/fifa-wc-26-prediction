@@ -138,8 +138,7 @@ jobs:
           API_FOOTBALL_LEAGUE_ID: ${{ vars.API_FOOTBALL_LEAGUE_ID }}
           API_FOOTBALL_SEASON: ${{ vars.API_FOOTBALL_SEASON }}
           FOOTBALL_DATA_COMPETITION: ${{ vars.FOOTBALL_DATA_COMPETITION }}
-        # SECURITY: same env-var hardening as the resolve-provider step.
-        env:
+          # SECURITY: dispatch input goes through env, never shell-interpolated.
           INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           if [ "$INPUT_DRY_RUN" = "true" ]; then
