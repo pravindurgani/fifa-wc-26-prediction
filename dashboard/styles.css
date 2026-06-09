@@ -1345,7 +1345,8 @@ section#contenders .card > .filter-row {
   /* Filter rows: stack and let selects take full width */
   .filter-row { gap: 8px; }
   .filter-row label { width: 100%; }
-  .filter-row select { width: 100%; min-height: 40px; font-size: 14px; }
+  /* 16px on selects prevents iOS Safari from zooming on focus, same as inputs. */
+  .filter-row select { width: 100%; min-height: 40px; font-size: 16px; }
   .filter-row .search-label { width: 100%; }
   .search-label input[type="search"] {
     min-width: 0; width: 100%; font-size: 16px; /* 16px prevents iOS zoom */
@@ -1357,10 +1358,10 @@ section#contenders .card > .filter-row {
   .live-status { flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; }
   .live-status .live-meta { flex-basis: 100%; font-size: 11px; }
 
-  /* Compare pickers: full-width selects on mobile */
+  /* Compare pickers: full-width selects on mobile (16px = no iOS zoom on focus) */
   .compare-pickers { gap: 8px; }
   .compare-pickers label { width: 100%; }
-  .compare-pickers select { min-width: 0; width: 100%; }
+  .compare-pickers select { min-width: 0; width: 100%; font-size: 16px; min-height: 40px; }
   .compare-pickers .vs-pill { align-self: center; }
   #cmp-swap { width: 100%; }
 
@@ -1394,9 +1395,11 @@ section#contenders .card > .filter-row {
   /* Downloads: ensure tap target is comfortable */
   .download-card { padding: 14px !important; min-height: 64px; }
 
-  /* Top controls don't crowd brand */
-  .top-controls { gap: 8px; }
-  .last-updated { display: none; }
+  /* Top controls don't crowd brand. Keep the freshness timestamp visible —
+     it's the user's only signal that the live polling loop is actually
+     ticking — but shrink it so it doesn't compete with the brand. */
+  .top-controls { gap: 8px; flex-wrap: wrap; }
+  .last-updated { font-size: 11px; opacity: 0.75; flex-basis: 100%; text-align: right; }
 
   /* Prevent any errant horizontal overflow at viewport edges */
   html, body { overflow-x: hidden; }
