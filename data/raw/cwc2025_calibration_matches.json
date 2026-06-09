@@ -1,0 +1,98 @@
+[
+  {
+    "label": "Inter Miami vs Al Ahly",
+    "date": "2025-06-14",
+    "hour_utc": 20,
+    "venue": "Hard Rock Stadium",
+    "city": "Miami Gardens",
+    "lat": 25.957,
+    "lon": -80.239,
+    "home_country": "United States",
+    "away_country": "Egypt",
+    "notes": "Tournament opener; widely reported as oppressive heat/humidity."
+  },
+  {
+    "label": "PSG vs Atletico Madrid",
+    "date": "2025-06-19",
+    "hour_utc": 19,
+    "venue": "Rose Bowl",
+    "city": "Pasadena",
+    "lat": 34.161,
+    "lon": -118.168,
+    "home_country": "France",
+    "away_country": "Spain",
+    "notes": "Two UEFA clubs in southern California — control case for UEFA-only matchup."
+  },
+  {
+    "label": "Bayern Munich vs Boca Juniors",
+    "date": "2025-06-20",
+    "hour_utc": 23,
+    "venue": "Hard Rock Stadium",
+    "city": "Miami Gardens",
+    "lat": 25.957,
+    "lon": -80.239,
+    "home_country": "Germany",
+    "away_country": "Argentina",
+    "notes": "Late evening Miami — checks whether evening kickoffs avoid the hot_humid bucket."
+  },
+  {
+    "label": "Chelsea vs Flamengo",
+    "date": "2025-06-20",
+    "hour_utc": 18,
+    "venue": "Lincoln Financial Field",
+    "city": "Philadelphia",
+    "lat": 39.901,
+    "lon": -75.168,
+    "home_country": "England",
+    "away_country": "Brazil",
+    "notes": "Afternoon East Coast kickoff — June heat dome candidate."
+  },
+  {
+    "label": "Real Madrid vs Pachuca",
+    "date": "2025-06-22",
+    "hour_utc": 19,
+    "venue": "Bank of America Stadium",
+    "city": "Charlotte",
+    "lat": 35.226,
+    "lon": -80.853,
+    "home_country": "Spain",
+    "away_country": "Mexico",
+    "notes": "UEFA vs CONCACAF — humidity reference for Carolinas."
+  },
+  {
+    "label": "Manchester City vs Wydad",
+    "date": "2025-06-18",
+    "hour_utc": 16,
+    "venue": "Lincoln Financial Field",
+    "city": "Philadelphia",
+    "lat": 39.901,
+    "lon": -75.168,
+    "home_country": "England",
+    "away_country": "Morocco",
+    "notes": "Earliest US kickoff slot — heat-index maximum likely."
+  },
+  {
+    "label": "Juventus vs Wydad",
+    "date": "2025-06-22",
+    "hour_utc": 16,
+    "venue": "Lincoln Financial Field",
+    "city": "Philadelphia",
+    "lat": 39.901,
+    "lon": -75.168,
+    "home_country": "Italy",
+    "away_country": "Morocco",
+    "notes": "Another 12pm ET kickoff in Philadelphia — second UEFA vs CAF datapoint."
+  },
+  {
+    "label": "Borussia Dortmund vs Fluminense",
+    "date": "2025-06-17",
+    "hour_utc": 22,
+    "venue": "MetLife Stadium",
+    "city": "East Rutherford",
+    "lat": 40.814,
+    "lon": -74.077,
+    "home_country": "Germany",
+    "away_country": "Brazil",
+    "notes": "MetLife — also a WC2026 venue; check NYC-area summer evening profile."
+  }
+]
