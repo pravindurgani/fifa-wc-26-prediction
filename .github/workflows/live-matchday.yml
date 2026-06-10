@@ -39,7 +39,12 @@ permissions:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Bumped 15 → 25 for launch: 3×3000-sim re-sim + pip + pytest + Vercel
+    # deploy on a 2-core runner can brush 15 min on the first cold tick.
+    # Atomic writes + circuit breaker mean a killed job leaves no partial
+    # state; next tick retries clean. 25 min eliminates the timeout as a
+    # launch-day failure mode.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -202,7 +207,14 @@ jobs:
       # if it's healthy; if it isn't, you'll need to run `vercel deploy
       # --prod --yes` manually after each commit).
       - name: Deploy fresh JSON to Vercel
-        if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true' && env.VERCEL_TOKEN != ''
+        # GOTCHA: `env.VERCEL_TOKEN` referenced from a step `if:` reads the
+        # JOB/WORKFLOW env block, NOT this step's own `env:` block (the step
+        # env hasn't been hydrated yet when `if:` is evaluated). Use the
+        # `secrets` context directly — it IS available in step `if:` per the
+        # context-availability table. Without this fix the entire deploy step
+        # silently skipped on every cron tick — only manual `vercel deploy
+        # --prod` invocations were actually reaching production.
+        if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true' && secrets.VERCEL_TOKEN != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
