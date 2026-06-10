@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Methodology — How we predict the World Cup 2026</title>
   <meta name="description" content="Plain-English walkthrough of how the FIFA World Cup 2026 prediction model works." />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="methodology.css" />
   <script>
     (function() {
       const stored = localStorage.getItem('wc26-theme');
@@ -14,8 +12,32 @@
       document.documentElement.dataset.theme = stored || sys;
     })();
   </script>
+  <!-- Vercel Web Analytics (enable Project → Analytics in Vercel dashboard) -->
+  <script defer src="/_vercel/insights/script.js"></script>
+  <!-- Vercel Speed Insights -->
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+  <meta property="og:title" content="Methodology — World Cup 2026 Simulator" />
+  <meta property="og:description" content="Plain-English walkthrough of the probabilistic FIFA World Cup 2026 model." />
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="World Cup 2026 Simulator" />
+  <meta property="og:url" content="https://fifa-wc-26-prediction.vercel.app/methodology" />
+  <link rel="canonical" href="https://fifa-wc-26-prediction.vercel.app/methodology" />
+  <meta property="og:image" content="https://fifa-wc-26-prediction.vercel.app/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Methodology — World Cup 2026 Simulator" />
+  <meta name="twitter:description" content="Plain-English walkthrough of the probabilistic FIFA World Cup 2026 model." />
+  <meta name="twitter:image" content="https://fifa-wc-26-prediction.vercel.app/og-image.png" />
+  <meta name="theme-color" content="#0A0A0B" />
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="methodology.css" />
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to main content</a>
   <header class="site-header">
     <div class="container">
       <div class="brand">
@@ -38,7 +60,7 @@
     </div>
   </header>
 
-  <main class="container method-main">
+  <main class="container method-main" id="main">
 
     <section class="tldr-card">
       <h2>The 30-second version</h2>
@@ -144,11 +166,12 @@
         <p>For group ties we apply the full FIFA 2026 cascade:</p>
         <ol class="walkthrough small-walk">
           <li>Most points</li>
-          <li>Best goal difference</li>
-          <li>Most goals scored</li>
           <li>Head-to-head points among tied teams</li>
-          <li>Head-to-head goal difference</li>
-          <li>Head-to-head goals scored</li>
+          <li>Head-to-head goal difference (among tied teams)</li>
+          <li>Head-to-head goals scored (among tied teams)</li>
+          <li>If a strict subset remains tied: re-apply H2H criteria 2–4 to that subset (recursive)</li>
+          <li>Overall goal difference</li>
+          <li>Overall goals scored</li>
           <li>Fair-play points (approximated as zero in simulation)</li>
           <li>FIFA World Ranking (new for 2026 — replaces drawing of lots)</li>
         </ol>
@@ -173,7 +196,7 @@
         <p class="muted" style="margin-top:14px">
           All hand-coded assumptions are stress-tested in the sensitivity analysis
           (<a href="index.html#robustness">Robustness section</a>) — top-team rankings
-          stay stable across 22 different parameter scenarios.
+          stay stable across 27 different parameter scenarios.
         </p>
       </div>
     </section>
@@ -204,13 +227,13 @@
         <p>
           Every hand-coded assumption (host boost, altitude penalty, heat penalty,
           squad-value cap, penalty-shootout slope, Negative Binomial dispersion) was
-          varied across 22 scenarios. For top contenders:
+          varied across 27 scenarios. For top contenders:
         </p>
         <ul>
-          <li>Spain's champion probability stays in <strong>23.2% — 28.2%</strong>.</li>
-          <li>Argentina's stays in <strong>18.6% — 22.0%</strong>.</li>
-          <li>France's stays in <strong>8.0% — 10.3%</strong>.</li>
-          <li>Top-6 rank ordering is identical across all 22 scenarios.</li>
+          <li>Spain's champion probability stays in <strong>22.1% — 27.7%</strong> (mean 25.2%).</li>
+          <li>Argentina's stays in <strong>17.3% — 20.3%</strong> (mean 18.8%).</li>
+          <li>France's stays in <strong>8.4% — 10.2%</strong> (mean 9.4%).</li>
+          <li>Top-6 rank ordering is identical across all 27 scenarios.</li>
         </ul>
         <p>
           The precise percentages move a little with assumption choices, but the broad
@@ -248,7 +271,7 @@
         <h2>Where the data comes from</h2>
         <ul class="data-sources">
           <li><strong>49,450 historical international results</strong> — open <code>martj42/international_results</code> (CC0) on GitHub.</li>
-          <li><strong>FIFA World Ranking</strong> (June 2026 live tracker) — feeds the ultimate tiebreaker.</li>
+          <li><strong>FIFA World Ranking</strong> (April 2026 — latest official release; next update lands 11 Jun 2026, opening day) — feeds the ultimate tiebreaker.</li>
           <li><strong>2026 schedule + groups</strong> — FIFA.com (final draw 5 Dec 2025).</li>
           <li><strong>R32 bracket + Annex C lookup table (495 entries)</strong> — FIFA Regulations Annex C.</li>
           <li><strong>Squad market values</strong> — Transfermarkt via Sportingpedia / GiveMeSport (May-June 2026).</li>

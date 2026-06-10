@@ -9,6 +9,20 @@
   <meta property="og:title" content="World Cup 2026 Simulator" />
   <meta property="og:description" content="48 teams · 104 matches · 25,000 simulations · honest probabilities" />
   <meta property="og:type" content="website" />
+  <link rel="canonical" href="https://fifa-wc-26-prediction.vercel.app/" />
+  <meta property="og:url" content="https://fifa-wc-26-prediction.vercel.app/" />
+  <meta property="og:site_name" content="World Cup 2026 Simulator" />
+  <meta property="og:image" content="https://fifa-wc-26-prediction.vercel.app/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="World Cup 2026 Simulator — 25,000 simulated tournaments, honest probabilities" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="World Cup 2026 Simulator" />
+  <meta name="twitter:description" content="48 teams · 104 matches · 25,000 simulations · honest probabilities" />
+  <meta name="twitter:image" content="https://fifa-wc-26-prediction.vercel.app/og-image.png" />
+  <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2v20'/%3E%3Cpath d='m12 12 6 6'/%3E%3Cpath d='m12 12-6 6'/%3E%3C/svg%3E" />
   <script>
     (function() {
@@ -19,6 +33,10 @@
       } catch (e) { document.documentElement.dataset.theme = 'dark'; }
     })();
   </script>
+  <!-- Vercel Web Analytics (enable Project → Analytics in Vercel dashboard) -->
+  <script defer src="/_vercel/insights/script.js"></script>
+  <!-- Vercel Speed Insights -->
+  <script defer src="/_vercel/speed-insights/script.js"></script>
   <!-- Preconnect to Google Fonts so DNS + TLS handshake start in parallel
        with CSS download. -200ms on cold mobile loads. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -38,8 +56,44 @@
           src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
           integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g"
           crossorigin="anonymous"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "World Cup 2026 Simulator",
+    "url": "https://fifa-wc-26-prediction.vercel.app/",
+    "description": "Probabilistic FIFA World Cup 2026 simulator — 48 teams, 104 matches, 25,000 Monte Carlo simulations.",
+    "author": {
+      "@type": "Person",
+      "name": "Pravin Durgani",
+      "url": "https://pravindurgani.com/"
+    }
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    "name": "World Cup 2026 Predictions",
+    "description": "Team and match probabilities from 25,000 Monte Carlo simulations of the FIFA World Cup 2026, with calibration data, walk-forward backtests, sensitivity audit, and travel impact analysis.",
+    "url": "https://fifa-wc-26-prediction.vercel.app/",
+    "license": "https://creativecommons.org/licenses/by/4.0/",
+    "creator": {
+      "@type": "Person",
+      "name": "Pravin Durgani"
+    },
+    "distribution": [
+      {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://fifa-wc-26-prediction.vercel.app/predictions.json"},
+      {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://fifa-wc-26-prediction.vercel.app/calibration.json"},
+      {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://fifa-wc-26-prediction.vercel.app/walk_forward.json"},
+      {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://fifa-wc-26-prediction.vercel.app/sensitivity.json"},
+      {"@type": "DataDownload", "encodingFormat": "application/json", "contentUrl": "https://fifa-wc-26-prediction.vercel.app/travel_impact.json"}
+    ]
+  }
+  </script>
 </head>
 <body>
+  <a class="skip-link" href="#top">Skip to main content</a>
   <header class="site-header">
     <div class="container">
       <a href="#top" class="brand" aria-label="Home">
@@ -51,10 +105,10 @@
             <path d="m12 12-6 6"/>
           </svg>
         </span>
-        <span class="brand-text">
-          <span class="brand-title">World Cup 2026 Simulator</span>
+        <div class="brand-text">
+          <h1 class="brand-title">World Cup 2026 Simulator</h1>
           <span class="brand-sub">Probabilistic model · 48 teams · 104 matches <span class="ver-pill">v3</span></span>
-        </span>
+        </div>
       </a>
       <nav class="top-nav" aria-label="Sections">
         <a href="#storylines">Storylines</a>
@@ -111,7 +165,7 @@
         </div>
         <div class="htr-item">
           <strong>Robustness is the stress test.</strong>
-          The same simulation is re-run under 22 different parameter assumptions. If the top-6 order survives all of them, the story is real.
+          The same simulation is re-run under 27 different parameter assumptions. If the top-6 order survives all of them, the story is real.
         </div>
       </div>
     </details>
@@ -257,7 +311,7 @@
 
     <section id="groups" class="reveal">
       <h2>Group stage projections</h2>
-      <p class="section-desc">Full FIFA 2026 tiebreaker cascade per simulation: pts → GD → GF → H2H pts → H2H GD → H2H GF → fair-play (approximated as zero) → FIFA ranking. Top 2 + 8 best 3rd-placers advance.</p>
+      <p class="section-desc">Full FIFA 2026 tiebreaker cascade per simulation: pts → H2H pts → H2H GD → H2H GF (re-applied among still-tied teams) → overall GD → overall GF → fair-play (approximated as zero) → FIFA ranking. Top 2 + 8 best 3rd-placers advance.</p>
       <div id="groups-grid" class="groups-grid"></div>
     </section>
 
@@ -451,7 +505,7 @@
         </a>
         <a class="card download-card" href="./sensitivity.json" download>
           <div class="dl-name">sensitivity.json</div>
-          <div class="dl-desc">22-scenario hyper-parameter audit · ~55 KB</div>
+          <div class="dl-desc">27-scenario hyper-parameter audit · ~55 KB</div>
         </a>
         <a class="card download-card" href="./travel_impact.json" download>
           <div class="dl-name">travel_impact.json</div>
