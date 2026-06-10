@@ -207,14 +207,15 @@ jobs:
       # if it's healthy; if it isn't, you'll need to run `vercel deploy
       # --prod --yes` manually after each commit).
       - name: Deploy fresh JSON to Vercel
-        # GOTCHA: `env.VERCEL_TOKEN` referenced from a step `if:` reads the
-        # JOB/WORKFLOW env block, NOT this step's own `env:` block (the step
-        # env hasn't been hydrated yet when `if:` is evaluated). Use the
-        # `secrets` context directly — it IS available in step `if:` per the
-        # context-availability table. Without this fix the entire deploy step
-        # silently skipped on every cron tick — only manual `vercel deploy
-        # --prod` invocations were actually reaching production.
-        if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true' && secrets.VERCEL_TOKEN != ''
+        # NOTE on `env.VERCEL_TOKEN != ''`: this DOES work in step `if:` because
+        # the step's own env block IS visible to the step's own if-expression
+        # at evaluation time (proven empirically: workflow run 27310480827
+        # dispatched at 22:29 successfully ran this step and deployed to prod).
+        # Earlier attempt to swap to `secrets.VERCEL_TOKEN` broke the entire
+        # workflow ("Unrecognized named-value: 'secrets'") — the `secrets`
+        # context is NOT permitted in step `if:` expressions despite some
+        # docs implying otherwise. Keep `env.VERCEL_TOKEN`.
+        if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true' && env.VERCEL_TOKEN != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
