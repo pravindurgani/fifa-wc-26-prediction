@@ -70,7 +70,13 @@
   color: var(--text);
   white-space: pre;
   margin: 12px 0;
+  /* Without max-width the <pre> grows to its content's natural width and the
+     overflow-x: auto rule above never engages (it triggers only when
+     scrollWidth > clientWidth — and clientWidth has no constraint). */
+  max-width: 100%;
 }
+.apx-tbl, .table-wrap { max-width: 100%; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .apx-tbl {
   width: 100%;

@@ -59,6 +59,18 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
+/* Phones: stack the icon + body so .eqn/<pre> can shrink to viewport width
+   and engage its own horizontal scroll instead of silently clipping under
+   body { overflow-x: hidden }. */
+@media (max-width: 700px) {
+  .explain {
+    grid-template-columns: 1fr;
+    padding: 18px 18px;
+    gap: 12px;
+  }
+  .explain > * { min-width: 0; }
+  .explain-icon { display: none; }
+}
 .explain.warn {
   border-color: color-mix(in srgb, var(--danger) 30%, var(--border));
   background: color-mix(in srgb, var(--danger) 5%, var(--surface));
