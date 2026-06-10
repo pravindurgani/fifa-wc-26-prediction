@@ -819,7 +819,7 @@ def main():
         ],
         "data_sources": {
             "match_history": "github.com/martj42/international_results (CC0)",
-            "fifa_rankings": "FIFA Men's World Ranking (live tracker, June 2026)",
+            "fifa_rankings": "FIFA Men's World Ranking (April 2026 release; next update 11 Jun 2026)",
             "schedule": "FIFA.com official 2026 schedule + ESPN article 47108758",
             "bracket": "FIFA Annex C (Regulations) — official R32→Final mapping",
             "annex_c_third_place_lookup": "Wikipedia template + FWC2026 regulations PDF",

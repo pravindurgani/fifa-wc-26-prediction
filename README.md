@@ -194,7 +194,7 @@ Top-6 rank ordering identical across all 22 scenarios. The model is robust.
 ## Data sources
 
 - **Match history**: [martj42/international_results](https://github.com/martj42/international_results) (CC0) — every game since 1872
-- **FIFA rankings**: live tracker (June 2026)
+- **FIFA rankings**: April 2026 release (next update 11 Jun 2026)
 - **2026 schedule + bracket**: FIFA.com (final draw 5 Dec 2025), Annex C regulations
 - **Squad values**: Transfermarkt via Sportingpedia / GiveMeSport
 - **Stadium metadata**: hand-curated host city coordinates, altitude, climate
