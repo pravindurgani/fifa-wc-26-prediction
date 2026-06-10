@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  WC26 dispatcher — fires `gh workflow run live-matchday.yml --ref main`
+  every 10 minutes during the tournament window, bypassing GitHub's
+  unreliable cron scheduler. Install to ~/Library/LaunchAgents/.
+
+  Window/date gating happens in run.sh (not here) so this plist stays
+  static across the tournament. StartInterval=600 = every 10 min; runs
+  only when the Mac is awake (`caffeinate -dimsu` the Mini for the
+  39-day tournament window if you want zero missed ticks).
+
+  Install:
+    cp ops/launchd/com.pravindurgani.wc26-dispatch.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.pravindurgani.wc26-dispatch.plist
+
+  Uninstall:
+    launchctl bootout gui/$UID/com.pravindurgani.wc26-dispatch
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pravindurgani.wc26-dispatch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/Users/prav/.config/wc26-dispatcher/run.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/prav</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/prav/Library/Logs/wc26-dispatch.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/prav/Library/Logs/wc26-dispatch.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>
