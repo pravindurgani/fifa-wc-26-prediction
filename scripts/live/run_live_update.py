@@ -131,21 +131,60 @@ def detect_provider_source() -> tuple[str, str]:
 def write_live_state(mode: str, completed_count: int, sim_rerun: bool,
                      warnings: list | None = None, source: str | None = None,
                      provider_mode: str | None = None):
-    """Atomic live_state.json write."""
+    """Atomic live_state.json write.
+
+    Preserves the previous `last_updated_utc` when no material field changed
+    so unchanged ticks produce a byte-identical file (no git diff → no
+    commit → no deploy). Material fields: mode, completed_matches_count,
+    simulation_rerun_this_tick, source, provider_mode, warnings.
+    """
     if source is None or provider_mode is None:
         auto_source, auto_mode = detect_provider_source()
         source = source or auto_source
         provider_mode = provider_mode or auto_mode
-    state = {
+    warnings = warnings or []
+
+    prev = None
+    state_path = DASH / "live_state.json"
+    try:
+        if state_path.exists():
+            prev = json.loads(state_path.read_text())
+    except Exception:
+        prev = None  # corrupted file → treat as no prior state, bump fresh
+
+    def _material(s):
+        return (s.get("mode"),
+                s.get("completed_matches_count"),
+                bool(s.get("simulation_rerun_this_tick")),
+                s.get("source"),
+                s.get("provider_mode"),
+                json.dumps(s.get("warnings") or [], sort_keys=True))
+
+    new_state_no_ts = {
         "mode": mode,
-        "last_updated_utc": datetime.now(timezone.utc).isoformat(),
         "completed_matches_count": completed_count,
         "simulation_rerun_this_tick": sim_rerun,
         "source": source,
         "provider_mode": provider_mode,
-        "warnings": warnings or [],
+        "warnings": warnings,
     }
-    atomic_write_json(DASH / "live_state.json", state)
+    if prev and _material(prev) == _material(new_state_no_ts):
+        # Material state unchanged — preserve prior timestamp so the on-disk
+        # file is byte-identical to the previous tick.
+        ts = prev.get("last_updated_utc") or datetime.now(timezone.utc).isoformat()
+    else:
+        ts = datetime.now(timezone.utc).isoformat()
+
+    state = {
+        "mode": mode,
+        "last_updated_utc": ts,
+        "completed_matches_count": completed_count,
+        "simulation_rerun_this_tick": sim_rerun,
+        "source": source,
+        "provider_mode": provider_mode,
+        "warnings": warnings,
+    }
+    atomic_write_json(state_path, state)
     return state
 
 
