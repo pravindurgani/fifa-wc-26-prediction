@@ -53,6 +53,60 @@ echo "→ Copied plist to $PLIST_DEST"
 launchctl load "$PLIST_DEST"
 echo "→ Loaded agent: $PLIST_NAME"
 
+# TCC probe: macOS blocks launchd-spawned bash from reading files under
+# ~/Desktop, ~/Documents, ~/Downloads etc. unless Full Disk Access is
+# granted. Detect this NOW (instead of silently failing every 15 min for
+# the rest of the tournament) by spawning a one-shot probe agent.
+REPO_ROOT="$(cd "$(dirname "$0")"/../.. && pwd)"
+case "$REPO_ROOT" in
+  "$HOME"/Desktop/*|"$HOME"/Documents/*|"$HOME"/Downloads/*)
+    PROBE_PLIST="/tmp/wc26-tcc-probe.plist"
+    PROBE_OUT="/tmp/wc26-tcc-probe.out"
+    cat > "$PROBE_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.prav.wc26-tcc-probe</string>
+<key>ProgramArguments</key><array>
+  <string>/bin/bash</string><string>-c</string>
+  <string>ls "$REPO_ROOT/scripts/launchd" >/dev/null 2>&1 && echo OK || echo BLOCKED</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>$PROBE_OUT</string>
+</dict></plist>
+EOF
+    rm -f "$PROBE_OUT"
+    launchctl load "$PROBE_PLIST" 2>/dev/null
+    sleep 2
+    launchctl unload "$PROBE_PLIST" 2>/dev/null
+    PROBE_RESULT="$(cat "$PROBE_OUT" 2>/dev/null || echo BLOCKED)"
+    rm -f "$PROBE_PLIST" "$PROBE_OUT"
+    if [[ "$PROBE_RESULT" != "OK" ]]; then
+      echo ""
+      echo "⚠️  WARNING — macOS TCC blocks launchd from reading $REPO_ROOT"
+      echo ""
+      echo "Your project is under a protected folder (~/Desktop, ~/Documents,"
+      echo "or ~/Downloads). launchd-spawned bash cannot read files there"
+      echo "unless Full Disk Access is granted to /bin/bash."
+      echo ""
+      echo "Two fixes:"
+      echo "  (a) System Settings → Privacy & Security → Full Disk Access"
+      echo "      → + → Cmd+Shift+G → /bin → select 'bash' → toggle ON,"
+      echo "      then re-run this install script."
+      echo "  (b) Move the project out: mv \"$REPO_ROOT\" ~/projects/"
+      echo "      then re-link Vercel and re-install."
+      echo ""
+      echo "The agent is loaded but every tick will silently fail until you"
+      echo "fix this. Check 'logs/launchd-stderr.log' to confirm."
+    else
+      echo "→ TCC probe passed: launchd can read $REPO_ROOT"
+    fi
+    ;;
+  *)
+    echo "→ Project lives outside ~/Desktop|Documents|Downloads — no TCC concern."
+    ;;
+esac
+
 echo ""
 echo "✅ Choice 3 autopilot is live. The preview at"
 echo "   https://wc26-matchday-intelligence.vercel.app/"
