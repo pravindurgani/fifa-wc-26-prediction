@@ -10,8 +10,20 @@ name: Live matchday refresh
 #   - (Optional) Add repo SECRET `SPORTMONKS_TOKEN` if using Sportmonks
 # Without a provider key the orchestrator silently falls back to manual/mock mode.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
+  # ─── SAFETY: schedule disabled on this branch ───────────────────────────────
+  # This file lives on feature/matchday-intelligence (a research branch).
+  # The cron previously fired every 10 min and deployed feature-branch state
+  # to PROD via the `Deploy fresh JSON to Vercel` step below — clobbering the
+  # main-branch dashboard. Three layers of defence now keep prod safe:
+  #   1) cron commented (this line) → no auto-fire from feature branch
+  #   2) Vercel deploy step has `if: github.ref == 'refs/heads/main'` →
+  #      even a workflow_dispatch from feature branch can't promote to prod
+  #      (this file's `github.ref` is always `refs/heads/feature/…`)
+  #   3) `--prod` removed from the deploy command → worst case is a preview
+  # The same workflow on main keeps the cron + deploy active — only this
+  # branch's copy is muzzled.
+  # schedule:
+  #   - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       provider:
@@ -203,35 +215,47 @@ jobs:
           git commit -m "live: update results @ $(date -u +%Y-%m-%dT%H:%MZ)"
           # PUSH-RACE FIX: a manual dispatch firing during a scheduled cron
           # tick (or vice versa) can land out of order. Rebase the staged
-          # commit on top of any new origin/main commits before pushing so
-          # the second pusher doesn't 403 with non-fast-forward and silently
-          # drop its update. --autostash unnecessary here — we have a clean
-          # tree post-commit.
-          git pull --rebase origin main || echo "Rebase failed — pushing anyway."
-          git push || echo "Push failed — will retry next tick."
+          # commit on top of any new origin commits before pushing so the
+          # second pusher doesn't 403 with non-fast-forward and silently
+          # drop its update.
+          #
+          # SAFETY: this file lives on feature/matchday-intelligence — rebase
+          # AND push must target THIS branch, never main. The same workflow
+          # on main keeps `origin main` as the target.
+          BRANCH="feature/matchday-intelligence"
+          git pull --rebase origin "$BRANCH" || echo "Rebase failed — pushing anyway."
+          git push origin "HEAD:$BRANCH" || echo "Push failed — will retry next tick."
           exit 0
 
-      # Trigger Vercel deploy directly — bypasses the Git webhook entirely.
-      # Set up:
-      #   1. Create a token at https://vercel.com/account/settings/tokens
-      #      (scope: full account or just this project)
-      #   2. `gh secret set VERCEL_TOKEN --body <token>`
-      #   3. `gh variable set VERCEL_ORG_ID --body team_bWwpYxbVIFj0MKmBwqUc17Bs`
-      #   4. `gh variable set VERCEL_PROJECT_ID --body prj_xjonkzd9gY5QtdW01r8LSyvM4Ikc`
-      # Once those exist, every live tick auto-deploys to production.
-      # Until then, this step is a no-op (Git integration handles deploys
-      # if it's healthy; if it isn't, you'll need to run `vercel deploy
-      # --prod --yes` manually after each commit).
+      # ─── DEPLOY STEP — feature-branch variant ──────────────────────────────
+      # Vercel deploys are RESERVED for the same workflow on main.
+      # Three independent gates on this branch's copy:
+      #   (a) `if: github.ref == 'refs/heads/main'` → cron + dispatch on
+      #       feature/matchday-intelligence both evaluate to refs/heads/feature/…
+      #       so this entire step is skipped. The guard is the primary defence.
+      #   (b) `--prod` removed below → even if guard (a) is removed by mistake,
+      #       worst case is a throwaway preview URL, never the prod alias.
+      #   (c) Existing token-presence check kept → still a no-op if secrets
+      #       aren't configured for this run.
+      # Re-arm production deploys ONLY by deleting this whole block when
+      # merging to main (the main-branch copy is the production deployer).
       - name: Deploy fresh JSON to Vercel
-        if: steps.gate.outputs.skip != 'true' && github.event.inputs.dry_run != 'true' && env.VERCEL_TOKEN != ''
+        if: >-
+          github.ref == 'refs/heads/main'
+          && steps.gate.outputs.skip != 'true'
+          && github.event.inputs.dry_run != 'true'
+          && env.VERCEL_TOKEN != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
         run: |
           set +e
-          echo "Deploying dashboard/ to Vercel production…"
-          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" --no-clipboard
+          echo "Deploying dashboard/ to Vercel (preview only on this branch)…"
+          npx --yes vercel@latest pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          # NOTE: NO `--prod` flag on feature branch — defence-in-depth in case
+          # someone deletes the github.ref guard above. Main-branch copy of this
+          # workflow keeps `--prod`.
+          npx --yes vercel@latest deploy --yes --token="$VERCEL_TOKEN" --no-clipboard
           echo "Vercel deploy attempted (exit=$?). Workflow continues either way."
           exit 0
