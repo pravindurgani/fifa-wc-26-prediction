@@ -138,7 +138,10 @@ def phase_3_js_dom():
     html_ids = set(re.findall(r'\bid\s*=\s*["\']([\w\-]+)["\']', html))
     js_ids = set(re.findall(r"getElementById\(\s*['\"]([\w\-]+)['\"]\s*\)", js))
     js_ids |= set(re.findall(r"querySelector(?:All)?\(\s*['\"]#([\w\-]+)", js))
-    missing = sorted(js_ids - html_ids)
+    # Runtime-injected IDs: created via createElement/innerHTML in the
+    # init().catch error-recovery card. Not expected in static HTML.
+    runtime_injected_ids = {"retry-init"}
+    missing = sorted((js_ids - html_ids) - runtime_injected_ids)
     check(f"all JS-referenced DOM IDs exist ({len(js_ids)} checked)",
           not missing, f"missing: {missing[:5]}" if missing else "")
 
@@ -525,8 +528,10 @@ def phase_11_provider():
           "workflow_dispatch:" in wf and "dry_run:" in wf)
     check("workflow uses FOOTBALL_PROVIDER env",
           "FOOTBALL_PROVIDER:" in wf)
-    check("workflow runs every 10 minutes (was 15)",
-          "'*/10 * * * *'" in wf)
+    # Cron is now tournament-windowed (matches the live-matchday.yml schedule).
+    # Two entries cover Jun 10–30 and Jul 1–20; cron has no year field.
+    check("workflow runs every 10 minutes during tournament window",
+          "'*/10 * 10-30 6 *'" in wf and "'*/10 * 1-20 7 *'" in wf)
 
     # Dashboard
     js = (ROOT / "dashboard" / "app.js").read_text()
