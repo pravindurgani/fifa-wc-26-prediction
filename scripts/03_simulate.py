@@ -47,11 +47,10 @@ DEFAULTS = dict(
     host_boost_away=15.0,        # bump for host team playing in sister-host country
     altitude_penalty_scale=25.0, # Elo penalty for un-adapted teams at 2240m
     heat_penalty=15.0,           # Elo penalty for European/temperate teams in hot venues
-    squad_value_cap=20.0,        # max ±Elo from squad-value prior
     pen_elo_slope=600.0,         # higher = penalties become more random (closer to 50/50)
     nb_dispersion=5.0,           # Negative Binomial dispersion (lower = more upset variance — empirically tuned)
     dc_rho=-0.13,                # Dixon-Coles τ parameter (negative boosts low-score draws)
-    squad_value_cap_override=10.0,  # reduced from 20 — squad value should nudge, not double Elo's job
+    squad_value_cap_override=10.0,  # max ±Elo from squad-value prior (squad value nudges, not duplicates Elo's job)
     lambda_noise_per_match=True, # add Gamma noise to lambdas per match per sim (more variance)
     lambda_noise_alpha=12.0,     # higher = less per-match lambda noise
     travel_per_1000km=4.0,       # Elo penalty per 1000km of recent travel
@@ -94,7 +93,7 @@ def squad_value_elo(team, squad_values, log_mean, log_std, cfg):
     v = squad_values.get(team)
     if not v or v <= 0: return 0.0
     z = (math.log(v) - log_mean) / max(log_std, 0.5)
-    cap = cfg.get("squad_value_cap_override", cfg["squad_value_cap"])
+    cap = cfg["squad_value_cap_override"]
     return cap * max(-2.0, min(2.0, z)) / 2.0
 
 

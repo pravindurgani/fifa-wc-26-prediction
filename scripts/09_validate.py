@@ -173,7 +173,10 @@ def main():
     js_ids = set(re.findall(r"getElementById\(\s*['\"]([\w\-]+)['\"]\s*\)", js))
     js_ids |= set(re.findall(r"querySelector\(\s*['\"]#([\w\-]+)", js))
     html_ids = set(re.findall(r'\bid\s*=\s*["\']([\w\-]+)["\']', html))
-    missing = sorted(js_ids - html_ids)
+    # Runtime-injected IDs: created via card.innerHTML/createElement in error-recovery
+    # paths, not present in static HTML by design.
+    runtime_injected_ids = {"retry-init"}
+    missing = sorted((js_ids - html_ids) - runtime_injected_ids)
     total += 1; passed += check(f"All {len(js_ids)} DOM IDs from app.js present in index.html",
                                 not missing,
                                 f"missing: {missing[:5]}" if missing else "")
