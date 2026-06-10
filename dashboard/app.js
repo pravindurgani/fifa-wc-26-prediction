@@ -358,7 +358,7 @@ function renderLiveStatusBar(liveState) {
   banner.classList.toggle('is-pre', !isLive);
   banner.innerHTML = `
     <span class="live-dot" aria-hidden="true"></span>
-    <span class="live-mode">${isLive ? 'Live-adjusted' : 'Pre-tournament static'}</span>
+    <span class="live-mode">${isLive ? 'Live-adjusted' : 'Pre-tournament baseline'}</span>
     <span class="live-meta">
       ${liveState.completed_matches_count} of 104 matches locked ·
       provider: ${escapeHtml(providerLabel(liveState.source))}${providerActive ? '' : ' (no live API key configured)'}${
