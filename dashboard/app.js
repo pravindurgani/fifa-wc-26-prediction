@@ -19,6 +19,17 @@ const fmt   = x => `${(x*100).toFixed(1)}%`;
 const fmt0  = x => `${(x*100).toFixed(0)}%`;
 const fmtNum = n => n == null ? "—" : Math.round(n).toLocaleString();
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// Simulator writes locked_score as { home_score, away_score } (03_simulate.py).
+// Legacy mock fixtures and manual edits sometimes pass a "2-1" string. Accept
+// both and short-circuit on falsy so callers can safely chain.
+const formatLockedScore = ls => {
+  if (ls == null || ls === '') return '';
+  if (typeof ls === 'string') return ls.replace(/-/g, '–'); // hyphen → en-dash
+  if (typeof ls === 'object' && 'home_score' in ls && 'away_score' in ls) {
+    return `${ls.home_score}–${ls.away_score}`;
+  }
+  return ''; // unknown shape: render nothing, don't leak [object Object]
+};
 const confedColorVar = team => {
   const c = CONFED[team];
   if (!c) return '--text-3';
@@ -209,31 +220,49 @@ function applyLiveUpdate({ liveState, liveDelta, livePred }) {
   const travel = window._travel;
   const cal = window._cal;
 
-  renderLastUpdated(activeData(), liveState);
-  renderLiveStatusBar(liveState);
-  // On live ticks the hero/stats numbers must NOT re-animate from 0 — that
-  // visually screams "data was cleared" and distracts mid-match. Pass
-  // { animate: false } so renderHero / renderStatsStrip set textContent
-  // directly to the final formatted value.
-  renderHero(activeData(), liveState, liveDelta, { animate: false });
-  renderStatsStrip(activeData(), cal, { animate: false });
-  renderStorylines(activeData(), travel);
-  renderMovers(data, liveState, liveDelta);
-  // Contenders / matches / compare are init/paint-split shims (below) — on
-  // first call they initialize (bind listeners, populate dropdowns once);
-  // on subsequent calls they only paint from module-scope state.
-  renderContenders(activeData(), liveDelta, travel);
-  renderGroups(activeData());
-  renderInteresting(activeData());
-  renderMatches(activeData(), liveState);
-  renderCompare(activeData(), travel);
-  renderFooter(activeData(), liveState);
+  // Wrap renders in try/catch so a single bad live payload can't leave the
+  // page half-painted. On failure we revert _livePred so activeData() falls
+  // back to the static baseline, then re-render with the baseline.
+  try {
+    renderLastUpdated(activeData(), liveState);
+    renderLiveStatusBar(liveState);
+    // On live ticks the hero/stats numbers must NOT re-animate from 0 — that
+    // visually screams "data was cleared" and distracts mid-match. Pass
+    // { animate: false } so renderHero / renderStatsStrip set textContent
+    // directly to the final formatted value.
+    renderHero(activeData(), liveState, liveDelta, { animate: false });
+    renderStatsStrip(activeData(), cal, { animate: false });
+    renderStorylines(activeData(), travel);
+    renderMovers(data, liveState, liveDelta);
+    // Contenders / matches / compare are init/paint-split shims (below) — on
+    // first call they initialize (bind listeners, populate dropdowns once);
+    // on subsequent calls they only paint from module-scope state.
+    renderContenders(activeData(), liveDelta, travel);
+    renderGroups(activeData());
+    renderInteresting(activeData());
+    renderMatches(activeData(), liveState);
+    renderCompare(activeData(), travel);
+    renderFooter(activeData(), liveState);
 
-  // Rebuild charts against the live payload — Chart.js instances must be
-  // destroyed before re-instantiation or the canvas accumulates state.
-  if (window._charts) window._charts.forEach(c => c.destroy());
-  window._charts = [];
-  renderAllCharts(activeData(), window._cal);
+    // Rebuild charts against the live payload — Chart.js instances must be
+    // destroyed before re-instantiation or the canvas accumulates state.
+    if (window._charts) window._charts.forEach(c => c.destroy());
+    window._charts = [];
+    renderAllCharts(activeData(), window._cal);
+  } catch (err) {
+    console.error('[applyLiveUpdate] render failed, reverting to baseline', err);
+    window._livePred = null;
+    try {
+      renderLastUpdated(activeData(), liveState);
+      renderHero(activeData(), liveState, liveDelta, { animate: false });
+      renderContenders(activeData(), liveDelta, travel);
+      renderGroups(activeData());
+      renderMatches(activeData(), liveState);
+      renderFooter(activeData(), liveState);
+    } catch (err2) {
+      console.error('[applyLiveUpdate] baseline repaint also failed', err2);
+    }
+  }
 }
 
 let _livePollTimer = null;
@@ -1043,7 +1072,8 @@ function paintMatches() {
     else if ((m.climate || '').includes('hot')) tags.push('<span class="tag hot">hot</span>');
     const travel = Math.max(m.home_travel_km || 0, m.away_travel_km || 0);
     if (travel > 2500) tags.push(`<span class="tag travel">${(travel/1000).toFixed(1)}k km</span>`);
-    if (m.locked_score) tags.push(`<span class="tag locked">final ${escapeHtml(m.locked_score)}</span>`);
+    const lockedTxt = formatLockedScore(m.locked_score);
+    if (lockedTxt) tags.push(`<span class="tag locked">final ${escapeHtml(lockedTxt)}</span>`);
 
     return `<div class="card match" id="match-${m.m}">
       <div class="match-head">

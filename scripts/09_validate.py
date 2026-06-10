@@ -191,6 +191,20 @@ def main():
         # node not available — skip rather than fail
         print(f"  [~] app.js node --check skipped ({type(e).__name__})")
 
+    # 6c2. formatLockedScore regression — guards the dict-shape rendering bug
+    # the round-3 review caught (locked_score is {home_score, away_score}, not str).
+    locked_test = ROOT / "tests" / "test_locked_score_format.js"
+    if locked_test.exists():
+        try:
+            rc = subprocess.run(["node", str(locked_test)],
+                                capture_output=True, text=True, timeout=10)
+            total += 1; passed += check("locked_score node regression test passes",
+                                        rc.returncode == 0,
+                                        (rc.stdout + rc.stderr).strip().splitlines()[-1][:80]
+                                        if rc.returncode else "11 cases incl. dict shape")
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            print(f"  [~] locked_score test skipped ({type(e).__name__})")
+
     # 6d. Appendix links from index.html + methodology.html
     print("\n[6d] Appendix linkage")
     idx_links_apx = "appendix.html" in idx
