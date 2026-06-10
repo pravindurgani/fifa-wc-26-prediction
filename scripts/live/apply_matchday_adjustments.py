@@ -273,9 +273,32 @@ def _load_stats_components() -> dict:
     Post-match only. Each entry adjusts the TEAM's live form (not a specific
     upcoming match), so match_id key is None. Group-stage total cap applied
     by aggregating per-team across all completed matches.
+
+    H7: down-weight the proxy by 0.5× when a team already has a non-zero
+    live_team_state delta. Both layers encode post-match form (the stats
+    proxy via shots/possession/corners, live_team_state via the Elo K-factor
+    on the result itself). Without this they stack with no joint cap until
+    GRAND_TOTAL_CAP clamps the sum — and the goal model ALSO carries its
+    own per-team form features. Halving stats_proxy when live_team_state is
+    active keeps the two signals from doubling up on the same information.
     """
     data = _read_json(LIVE / "match_stats_2026.json", default={}) or {}
     entries = data.get("matches") or []
+    # Read live team state to detect "form already accounted for" teams.
+    lts_path = LIVE / "live_team_state.json"
+    lts_data = _read_json(lts_path, default={}) or {}
+    # Schema written by update_team_state.py is `{"deltas": {team: float}}`.
+    # `team_state` was an older draft key; check both for forward-compat.
+    if isinstance(lts_data, dict):
+        lts_by_team = lts_data.get("deltas") or lts_data.get("team_state") or {}
+    else:
+        lts_by_team = {}
+    def _live_state_active(team: str) -> bool:
+        v = lts_by_team.get(team, 0.0)
+        try:
+            return abs(float(v)) > 0.01
+        except (TypeError, ValueError):
+            return False
     # Aggregate per team across all matches, applying both per-match and
     # group-stage caps.
     per_team_total: dict[str, list[dict]] = {}
@@ -287,6 +310,11 @@ def _load_stats_components() -> dict:
             if not team:
                 continue
             raw = float(s.get(f"{side}_form_adjustment_elo", 0.0) or 0.0)
+            # H7: 0.5× discount when live_team_state already reflects form.
+            downweighted = False
+            if _live_state_active(team):
+                raw = raw * 0.5
+                downweighted = True
             capped = max(-STATS_CAP_PER_MATCH, min(STATS_CAP_PER_MATCH, raw))
             if capped == 0.0:
                 continue
@@ -297,6 +325,7 @@ def _load_stats_components() -> dict:
                 "capped_elo_per_match": capped,
                 "cap_per_match": STATS_CAP_PER_MATCH,
                 "true_xg_available": s.get("true_xg_available", False),
+                "downweighted_for_live_team_state": downweighted,
                 "source": "api_football",
             })
     # Apply group-stage total cap per team.

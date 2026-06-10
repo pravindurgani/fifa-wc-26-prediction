@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Technical Appendix — World Cup 2026 Simulator</title>
   <meta name="description" content="Full mathematical specification of the FIFA World Cup 2026 prediction model: Negative Binomial goal model, Dixon-Coles correction, Annex C lookup, Monte Carlo configuration, calibration, walk-forward, ablation, sensitivity." />
+  <meta property="og:title" content="World Cup 2026 — Technical Appendix" />
+  <meta property="og:description" content="Negative Binomial goal model, Dixon-Coles correction, Annex C lookup, walk-forward, ablation, sensitivity." />
+  <meta property="og:type" content="article" />
+  <meta property="og:image" content="./og-image.svg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="World Cup 2026 — Technical Appendix" />
+  <meta name="twitter:description" content="Math + calibration + ablation behind the simulator." />
+  <meta name="twitter:image" content="./og-image.svg" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='1.8' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12,7 16,9.5 16,14.5 12,17 8,14.5 8,9.5'/%3E%3Cline x1='12' y1='7' x2='12' y2='2'/%3E%3Cline x1='16' y1='9.5' x2='20' y2='8'/%3E%3Cline x1='16' y1='14.5' x2='20' y2='16'/%3E%3Cline x1='12' y1='17' x2='12' y2='22'/%3E%3Cline x1='8' y1='14.5' x2='4' y2='16'/%3E%3Cline x1='8' y1='9.5' x2='4' y2='8'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="methodology.css" />
   <link rel="stylesheet" href="appendix.css" />
@@ -79,7 +90,7 @@
         <p>To handle the over-dispersion in real football scorelines (variance &gt; mean), the marginal goal distribution is Negative Binomial:</p>
         <pre class="eqn">G ~ NB(λ, φ)         (mean = λ, variance = λ + λ²/φ)
 P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
-        <p>The dispersion parameter φ is tuned on the training set; current value: <code>φ ≈ 8.5</code> (where φ → ∞ reduces to Poisson). The sensitivity audit varies φ across <code>[6, 12]</code>.</p>
+        <p>The dispersion parameter φ is tuned on the training set; shipped default: <code>φ = 5.0</code> (where φ → ∞ reduces to Poisson — lower φ means more upset variance). The sensitivity audit varies φ across <code>[3, 5, 8, 15]</code>.</p>
 
         <h3 class="apx-sub">Dixon-Coles τ correction</h3>
         <p>The independent-marginals product under-predicts low-score draws and over-predicts 1-0 / 0-1. The Dixon-Coles correction multiplies the joint pmf on the four affected cells:</p>
@@ -96,7 +107,7 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
         <p>Beyond NB dispersion, each simulation pass draws a Gamma multiplier for each side to capture "off days" / "purple patches":</p>
         <pre class="eqn">α ~ Gamma(k=σ⁻², θ=σ²)        E[α] = 1, Var[α] = σ²
 λ_sim = λ · α</pre>
-        <p>Current <code>σ ≈ 0.20</code> (≈ 20% per-match relative noise). This is what turns identical λ values into the realistic 14–18pp spread of W/D/L probabilities seen in the live match cards.</p>
+        <p>Shipped α (Gamma shape) is <code>12.0</code>, which corresponds to <code>σ ≈ 0.289</code> (≈ 29% per-match relative noise via σ = 1/√α). This is what turns identical λ values into the realistic 14–18pp spread of W/D/L probabilities seen in the live match cards.</p>
       </div>
     </section>
 
@@ -189,9 +200,9 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
             <tr><td>Travel penalty per 1,000 km</td><td class="num">−4 Elo</td><td class="num">[−2, −7]</td></tr>
             <tr><td>Squad-value Elo cap</td><td class="num">±10</td><td class="num">[±5, ±20]</td></tr>
             <tr><td>Time-decay half-life</td><td class="num">180 days</td><td class="num">[120, 365]</td></tr>
-            <tr><td>NB dispersion φ</td><td class="num">8.5</td><td class="num">[6, 12]</td></tr>
+            <tr><td>NB dispersion φ</td><td class="num">5.0</td><td class="num">[3, 5, 8, 15]</td></tr>
             <tr><td>Dixon-Coles ρ</td><td class="num">−0.13</td><td class="num">[−0.18, −0.08]</td></tr>
-            <tr><td>λ-noise σ</td><td class="num">0.20</td><td class="num">[0.10, 0.30]</td></tr>
+            <tr><td>λ-noise σ</td><td class="num">0.289</td><td class="num">[0.183 – 0.354]</td></tr>
             <tr><td>Penalty-shootout slope</td><td class="num">0.30</td><td class="num">[0.20, 0.45]</td></tr>
           </tbody>
         </table>
@@ -448,5 +459,9 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
     }
     loadAppendixData();
   </script>
+
+  <!-- H8: Vercel Web Analytics (same-origin per CSP, no policy change). -->
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>

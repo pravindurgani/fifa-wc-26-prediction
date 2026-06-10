@@ -708,6 +708,11 @@ def main() -> int:
     valid: list[dict] = []
     rejected: list[tuple[dict, str]] = []
     warnings_list: list[dict] = []
+    # P1-G: capture in-play matches (status mapped to "LIVE") so the
+    # orchestrator can surface them as a live-game strip on the dashboard
+    # without waiting for FT. Score may be partial but is the truth-of-the-
+    # moment; elapsed minutes are useful UI context.
+    in_play: list[dict] = []
     for m in matches:
         if not isinstance(m, dict):
             rejected.append(({"m": "?"}, f"non-dict record ({type(m).__name__})"))
@@ -716,8 +721,21 @@ def main() -> int:
         if status in WARN_STATUSES:
             warnings_list.append({"m": m.get("m", "?"), "status": status, "note": m.get("note", "")})
             continue
+        if status == "LIVE":
+            # Minimal payload — score may be None very early in the match.
+            in_play.append({
+                "m": m.get("m"),
+                "home": m.get("home"),
+                "away": m.get("away"),
+                "home_score": m.get("home_score"),
+                "away_score": m.get("away_score"),
+                "elapsed": m.get("elapsed"),
+                "status": status,
+                "status_long": m.get("status_long", ""),
+            })
+            continue
         if status and status not in LOCKED_STATUSES:
-            continue  # SCHEDULED, LIVE — skip silently
+            continue  # SCHEDULED — skip silently
         if m.get("m") in seen_m:
             rejected.append((m, "duplicate match id"))
             continue
@@ -775,6 +793,7 @@ def main() -> int:
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "source": src,
         "completed_matches": valid,
+        "in_play": in_play,             # P1-G: surfaced via live_state.json
         "warnings": warnings_list,
     }
     try:

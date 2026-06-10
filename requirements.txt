@@ -4,3 +4,10 @@ scikit-learn>=1.3
 xgboost>=2.0
 pyarrow>=14.0
 joblib>=1.3
+# Pinned explicitly — 03_simulate uses scipy.stats.{nbinom, poisson} directly.
+# Was previously transitive via sklearn; a sklearn release dropping that dep
+# would silently break the simulator.
+scipy>=1.11
+# Provider fetchers (fetch_results, fetch_injuries, fetch_lineups,
+# fetch_match_stats, fetch_weather) all hit external HTTPS APIs.
+requests>=2.31

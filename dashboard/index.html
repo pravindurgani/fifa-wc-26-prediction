@@ -9,7 +9,18 @@
   <meta property="og:title" content="World Cup 2026 Simulator" />
   <meta property="og:description" content="48 teams · 104 matches · 25,000 simulations · honest probabilities" />
   <meta property="og:type" content="website" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2v20'/%3E%3Cpath d='m12 12 6 6'/%3E%3Cpath d='m12 12-6 6'/%3E%3C/svg%3E" />
+  <!-- P2: actual share card + Twitter equivalents. SVG renders crisply in
+       most modern unfurlers (Slack, Discord, Twitter, LinkedIn). -->
+  <meta property="og:image" content="./og-image.svg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="World Cup 2026 Simulator" />
+  <meta name="twitter:description" content="48 teams · 104 matches · 25,000 simulations · honest probabilities" />
+  <meta name="twitter:image" content="./og-image.svg" />
+  <!-- P2: hexagon-stitching football favicon. The previous icon read as a
+       peace sign at favicon resolution. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='1.8' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpolygon points='12,7 16,9.5 16,14.5 12,17 8,14.5 8,9.5'/%3E%3Cline x1='12' y1='7' x2='12' y2='2'/%3E%3Cline x1='16' y1='9.5' x2='20' y2='8'/%3E%3Cline x1='16' y1='14.5' x2='20' y2='16'/%3E%3Cline x1='12' y1='17' x2='12' y2='22'/%3E%3Cline x1='8' y1='14.5' x2='4' y2='16'/%3E%3Cline x1='8' y1='9.5' x2='4' y2='8'/%3E%3C/svg%3E" />
   <script>
     (function() {
       try {
@@ -89,6 +100,9 @@
     </section>
 
     <div id="live-status" class="live-status reveal" aria-live="polite"></div>
+    <!-- P1-G: slim LIVE-now strip — populated by renderLiveStrip when
+         live_state.json carries in_play matches. Hidden otherwise. -->
+    <div id="live-strip" class="live-strip" aria-live="polite" hidden></div>
 
     <details class="how-to-read reveal">
       <summary>
@@ -230,7 +244,7 @@
               <th data-sort="rank">#</th>
               <th data-sort="team">Team</th>
               <th class="hide-sm" data-sort="group">Group</th>
-              <th class="num hide-md" data-sort="elo">Elo</th>
+              <th class="num hide-md" data-sort="elo" title="Model Elo — see methodology for the modified Glicko/Elo derivation">Model Elo</th>
               <th class="num hide-sm" data-sort="fifa_pts">FIFA pts</th>
               <th class="num hide-sm" data-sort="squad_value_eur_m">Squad €M</th>
               <th class="num" data-sort="p_advance_groups">Adv</th>
@@ -508,6 +522,17 @@
     </footer>
   </main>
 
-  <script src="app.js"></script>
+  <!-- P0-A: defer so app.js executes AFTER the deferred Chart.js (document
+       order is preserved among deferred scripts) AND survives the case
+       where Chart.js fails to load. Without defer, app.js could run before
+       Chart.js when the CDN is fast, throwing ReferenceError that the
+       broad init().catch then turned into a full-page wipe. -->
+  <script defer src="app.js"></script>
+
+  <!-- H8: Vercel Web Analytics. Loaded only when deployed on Vercel —
+       /_vercel/insights/script.js is same-origin so it satisfies the
+       existing CSP (script-src 'self' …) without a policy change. -->
+  <script defer src="/_vercel/insights/script.js"></script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>

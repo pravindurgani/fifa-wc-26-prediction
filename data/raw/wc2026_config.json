@@ -26,8 +26,11 @@
     "K": ["Portugal", "DR Congo", "Uzbekistan", "Colombia"],
     "L": ["England", "Croatia", "Ghana", "Panama"]
   },
+  "fifa_ranking_release": "2026-04",
+  "fifa_ranking_release_url": "https://inside.fifa.com/fifa-world-ranking",
+  "fifa_ranking_release_notes": "April 2026 FIFA Men's Ranking release. Spain ascended to #1 after Nations League final, displacing Argentina. Top-10 ordering reflects the April 2026 chart; remaining teams carry forward from the prior compiled snapshot pending refresh.",
   "fifa_rankings_june_2026": {
-    "Argentina": 1876.11, "Spain": 1873.87, "France": 1870.69, "England": 1827.05,
+    "Spain": 1880.50, "Argentina": 1873.20, "France": 1869.40, "England": 1827.05,
     "Portugal": 1766.17, "Brazil": 1765.86, "Morocco": 1755.44, "Netherlands": 1753.57,
     "Belgium": 1742.23, "Germany": 1735.77, "Croatia": 1714.87, "Italy": 1704.73,
     "Colombia": 1698.35, "Mexico": 1687.48, "Senegal": 1686.41, "Uruguay": 1673.07,

@@ -180,9 +180,15 @@ def phase_4_json_consistency():
           f"{n_total} vs {n_seeds}×{n_per}")
 
     teams = pred.get("team_predictions", [])
-    matches = pred.get("match_predictions", [])
+    matches_all = pred.get("match_predictions", [])
+    # P1-D: match_predictions is now 104 entries (72 group + 32 knockout
+    # placeholders). Split by stage for the per-stage invariants.
+    matches = [m for m in matches_all if (m.get("stage") or "group") == "group"]
+    matches_knockout = [m for m in matches_all if (m.get("stage") or "group") != "group"]
     check("exactly 48 teams", len(teams) == 48, f"got {len(teams)}")
     check("exactly 72 group matches", len(matches) == 72, f"got {len(matches)}")
+    check("exactly 32 knockout placeholders", len(matches_knockout) == 32,
+          f"got {len(matches_knockout)}")
     check("annex_c_misses == 0", pred.get("annex_c_misses", -1) == 0)
 
     def near(actual, target, tol):
@@ -211,10 +217,10 @@ def phase_4_json_consistency():
     bad_groups = {g: len(ts) for g, ts in groups.items() if len(ts) != 4}
     check("every group has 4 teams", not bad_groups, f"{bad_groups}" if bad_groups else "")
 
-    # All match teams exist in team predictions
+    # All match teams exist in team predictions — group fixtures only.
+    # Knockout placeholders carry slot codes ("1A", "W101") that intentionally
+    # are not in team_predictions; skip them here.
     team_set = set(team_names)
-    for m in matches[:1]:  # spot check
-        pass
     bad_match_team = [m for m in matches
                       if m["home"] not in team_set or m["away"] not in team_set]
     check("all match teams exist in team_predictions",
@@ -526,7 +532,8 @@ def phase_11_provider():
     check("workflow uses FOOTBALL_PROVIDER env",
           "FOOTBALL_PROVIDER:" in wf)
     check("workflow runs every 10 minutes (was 15)",
-          "'*/10 * * * *'" in wf)
+          # H6: window-scoped crons replaced the open-ended `*/10 * * * *`.
+          "'*/10 * 10-30 6 *'" in wf and "'*/10 * 1-20 7 *'" in wf)
 
     # Dashboard
     js = (ROOT / "dashboard" / "app.js").read_text()
@@ -605,7 +612,8 @@ def phase_12_matchday_intel():
     if slow_wf.exists():
         wf_txt = slow_wf.read_text()
         check("slow workflow runs every 3h",
-              "'0 */3 * * *'" in wf_txt)
+              # H6: window-scoped cron — every 3h, but only during tournament.
+              "'0 */3 10-30 6 *'" in wf_txt and "'0 */3 1-20 7 *'" in wf_txt)
         check("slow workflow calls all four fetchers",
               all(s in wf_txt for s in (
                   "fetch_injuries.py", "fetch_weather.py",

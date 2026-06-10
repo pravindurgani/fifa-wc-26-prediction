@@ -377,6 +377,48 @@ section h2 {
   100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--success, #10b981) 0%,  transparent); }
 }
 
+/* P1-G: LIVE-now strip — appears above the hero whenever live_state.in_play
+   carries any matches. Uses the same warm red as .is-live to read as
+   "happening right now", but stays slim so it doesn't displace the hero. */
+.live-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  background: color-mix(in srgb, var(--danger, #ef4444) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 35%, var(--border));
+  border-radius: var(--radius-md, 10px);
+  font-size: 13px;
+}
+.live-strip[hidden] { display: none; }
+.live-strip .ls-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  text-transform: uppercase; letter-spacing: .04em;
+  font-weight: 700; font-size: 11px;
+  color: var(--danger, #ef4444);
+}
+.live-strip .ls-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--danger, #ef4444);
+  animation: pulse-dot 1.6s infinite;
+}
+.live-strip .ls-match {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px;
+  background: var(--surface-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.live-strip .ls-match .ls-score { font-weight: 700; }
+.live-strip .ls-match .ls-elapsed { color: var(--text-3); font-size: 11px; }
+@media (max-width: 600px) {
+  .live-strip { padding: 8px 12px; font-size: 12px; }
+}
+
 /* LIVE DELTA IN CONTENDER TABLE */
 .row-delta {
   display: inline-block;
@@ -1094,6 +1136,13 @@ section#contenders .card > .filter-row {
 .tag.alt { color: var(--confed-afc); }
 .tag.hot { color: var(--warning); }
 .tag.travel { color: var(--danger); }
+/* P1-D: knockout stage badge (Round of 32 / Quarter-final / Final etc.) */
+.tag.stage {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  font-weight: 600;
+}
 .tag.locked {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 14%, transparent);
@@ -1360,6 +1409,26 @@ section#contenders .card > .filter-row {
     padding: 10px 0;
   }
   .filter-count { margin-left: 0; }
+
+  /* P1-B: belt-and-braces iOS zoom prevention.
+     iOS Safari force-zooms on focus of any text-entry control whose computed
+     font-size is < 16px. Pulled this up to a blanket page-wide rule because
+     prior round-2 audit measured 13.3px on filter search inputs — a more
+     specific selector lower in the cascade was winning over the per-input
+     rules above. `input[type="…"]` for every text-entry kind keeps buttons
+     and submits untouched. */
+  input[type="text"],
+  input[type="search"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="password"],
+  textarea,
+  select {
+    font-size: 16px;
+    min-height: 44px;
+  }
 
   /* Live status: wrap items vertically when cramped */
   .live-status { flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; }

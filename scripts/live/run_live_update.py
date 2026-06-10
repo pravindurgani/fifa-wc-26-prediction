@@ -23,6 +23,7 @@ Hardening (Jun 2026):
 """
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -35,9 +36,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 LIVE = ROOT / "data" / "live"
 PROC = ROOT / "data" / "processed"
+MODELS = ROOT / "models"
 DASH = ROOT / "dashboard"
 CB_PATH = LIVE / "circuit_breaker_state.json"
 CB_THRESHOLD = 3  # consecutive sim failures before tripping the breaker
+
+# C1: required artifacts for --live sim. Missing any of these crashes the sim
+# silently behind the circuit breaker; we fail loud BEFORE invoking 03_simulate.
+REQUIRED_ARTIFACTS = [
+    MODELS / "home_goals_model.joblib",
+    MODELS / "away_goals_model.joblib",
+    PROC / "matches_clean.parquet",
+    MODELS / "feature_cols_v2.json",
+    MODELS / "metrics_v2.json",
+    PROC / "elo_ratings.json",
+]
+
+
+def check_required_artifacts() -> list[Path]:
+    """Returns the list of missing required artifacts (empty if all present)."""
+    return [p for p in REQUIRED_ARTIFACTS if not p.exists()]
 
 
 def run(cmd: list[str]) -> int:
@@ -93,6 +111,18 @@ def get_results_warnings() -> list:
         return []
 
 
+def get_in_play_matches() -> list:
+    """P1-G: read in_play list from results_2026.json so the dashboard can
+    render a 'LIVE now' strip during matches without waiting for FT."""
+    p = LIVE / "results_2026.json"
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text()).get("in_play", []) or []
+    except Exception:
+        return []
+
+
 def get_live_predictions_locked_count() -> int:
     """How many matches were locked in the most recent predictions_live.json."""
     p = PROC / "predictions_live.json"
@@ -102,6 +132,57 @@ def get_live_predictions_locked_count() -> int:
         return len(json.loads(p.read_text()).get("completed_matches", []))
     except Exception:
         return -1
+
+
+def compute_input_hash() -> str:
+    """H1: SHA-256 over (results.completed_matches + matchday_intelligence.generated_at
+    + live_team_state.last_updated). Detects score corrections and intel refreshes
+    that the bare match-count check would miss.
+    """
+    h = hashlib.sha256()
+    # Completed matches (sorted by match number → stable)
+    res = LIVE / "results_2026.json"
+    if res.exists():
+        try:
+            data = json.loads(res.read_text())
+            cm = sorted(data.get("completed_matches", []), key=lambda m: m.get("m", 0))
+            h.update(json.dumps(cm, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        except Exception:
+            h.update(b"results_unreadable")
+    # Matchday intelligence freshness (any layer change)
+    mi = DASH / "matchday_intelligence.json"
+    if mi.exists():
+        try:
+            data = json.loads(mi.read_text())
+            h.update(str(data.get("generated_at", "")).encode("utf-8"))
+            # Also hash the aggregated counts so a fetcher silently emptying
+            # a layer still bumps the hash.
+            adj = data.get("adjustments", []) or []
+            h.update(str(len(adj)).encode("utf-8"))
+        except Exception:
+            h.update(b"mi_unreadable")
+    # Live team state. Schema is {"deltas": {team: float}, "last_updated":...}
+    lts = LIVE / "live_team_state.json"
+    if lts.exists():
+        try:
+            data = json.loads(lts.read_text())
+            h.update(str(data.get("last_updated", "")).encode("utf-8"))
+            deltas = data.get("deltas", {}) or {}
+            h.update(json.dumps(deltas, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        except Exception:
+            h.update(b"lts_unreadable")
+    return h.hexdigest()[:16]
+
+
+def read_last_input_hash() -> str:
+    """Read the hash stored in predictions_live.json on the previous tick."""
+    p = PROC / "predictions_live.json"
+    if not p.exists():
+        return ""
+    try:
+        return str(json.loads(p.read_text()).get("input_hash", ""))
+    except Exception:
+        return ""
 
 
 def detect_provider_source() -> tuple[str, str]:
@@ -130,12 +211,15 @@ def detect_provider_source() -> tuple[str, str]:
 
 def write_live_state(mode: str, completed_count: int, sim_rerun: bool,
                      warnings: list | None = None, source: str | None = None,
-                     provider_mode: str | None = None):
+                     provider_mode: str | None = None,
+                     in_play: list | None = None):
     """Atomic live_state.json write."""
     if source is None or provider_mode is None:
         auto_source, auto_mode = detect_provider_source()
         source = source or auto_source
         provider_mode = provider_mode or auto_mode
+    if in_play is None:
+        in_play = get_in_play_matches()
     state = {
         "mode": mode,
         "last_updated_utc": datetime.now(timezone.utc).isoformat(),
@@ -143,6 +227,8 @@ def write_live_state(mode: str, completed_count: int, sim_rerun: bool,
         "simulation_rerun_this_tick": sim_rerun,
         "source": source,
         "provider_mode": provider_mode,
+        "in_play": in_play,            # P1-G: dashboard LIVE strip
+        "in_play_count": len(in_play), # convenient summary
         "warnings": warnings or [],
     }
     atomic_write_json(DASH / "live_state.json", state)
@@ -238,9 +324,15 @@ def main() -> int:
     warns = get_results_warnings()
     last_synced = get_live_predictions_locked_count()
 
-    # Step 2: early exit if predictions_live already reflects current locked count
-    if last_synced == new_count and last_synced >= 0:
-        print(f"[run_live_update] predictions_live.json already at {new_count} locked matches — skipping sim")
+    # H1: hash-based change detection. Catches score corrections AND
+    # matchday-intel updates that the bare count check misses.
+    current_hash = compute_input_hash()
+    last_hash = read_last_input_hash()
+    inputs_changed = (current_hash != last_hash) or (last_synced != new_count)
+
+    # Step 2: early exit if NOTHING upstream has moved since the last sim
+    if not inputs_changed and last_synced >= 0:
+        print(f"[run_live_update] inputs unchanged (count={new_count}, hash={current_hash}) — skipping sim")
         mode = "pre_tournament" if new_count == 0 else "live"
         write_live_state(mode, new_count, sim_rerun=False, warnings=warns)
         write_circuit_breaker(0)  # success path resets
@@ -248,10 +340,31 @@ def main() -> int:
 
     if args.dry_run:
         print(f"[run_live_update] dry-run: would re-simulate "
-              f"({last_synced} locked → {new_count} locked)")
+              f"({last_synced} locked → {new_count} locked, hash {last_hash!r} → {current_hash!r})")
         mode = "pre_tournament" if new_count == 0 else "live"
         write_live_state(mode, new_count, sim_rerun=False, warnings=warns)
         return 0
+
+    # C1: fail loud if the artifacts the sim needs are absent. Without this
+    # check, 03_simulate raises FileNotFoundError, the circuit breaker burns
+    # three ticks, and the dashboard freezes at pre-tournament numbers for
+    # the rest of the tournament.
+    missing = check_required_artifacts()
+    if missing:
+        missing_names = [str(p.relative_to(ROOT)) for p in missing]
+        msg = ("Required artifacts missing — sim cannot run: "
+               + ", ".join(missing_names)
+               + ". Re-run daily-baseline or train locally.")
+        print(f"[run_live_update] {msg}")
+        write_live_state("live" if new_count > 0 else "pre_tournament",
+                         new_count, sim_rerun=False,
+                         warnings=warns + [{
+                             "type": "missing_model_artifacts",
+                             "message": msg,
+                             "missing": missing_names,
+                         }])
+        # Don't trip the circuit breaker for a setup problem — that needs a human.
+        return 2
 
     # Step 3: update team state (soft Elo deltas) — non-fatal if it fails
     rc = run([sys.executable, "scripts/live/update_team_state.py"])

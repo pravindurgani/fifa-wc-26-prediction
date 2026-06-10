@@ -70,6 +70,25 @@
 .explain ul, .explain ol { padding-left: 20px; }
 .explain li { margin: 6px 0; }
 
+/* P1-A: prevent right-edge clipping on mobile. The default grid layout
+   `48px 1fr` keeps a fixed icon column; the 1fr cell needs `min-width: 0`
+   so its long children (formulas, code, tables) can shrink/scroll instead
+   of overflowing the viewport. */
+.explain > *:not(.explain-icon) { min-width: 0; }
+.explain pre, .explain code, .explain table { max-width: 100%; }
+.explain pre { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.explain table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 600px) {
+  .explain {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px;
+  }
+  .explain-icon { display: none; }
+  .explain h2 { font-size: 17px; }
+  .explain pre { font-size: 11px; padding: 10px; }
+}
+
 .example-box {
   background: var(--accent-soft);
   border-left: 3px solid var(--accent);

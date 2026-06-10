@@ -59,10 +59,17 @@ function initTooltips() {
   document.querySelectorAll('.stat-info').forEach(el => {
     const txt = el.dataset.tip;
     if (!txt) return;
+    // P2-a11y: focusable + announced as an explanatory button.
+    if (!el.hasAttribute('tabindex'))  el.setAttribute('tabindex', '0');
+    if (!el.hasAttribute('role'))      el.setAttribute('role', 'button');
+    if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'More info: ' + txt);
     el.addEventListener('mouseenter', () => show(el, txt));
     el.addEventListener('focus',      () => show(el, txt));
     el.addEventListener('mouseleave', hide);
     el.addEventListener('blur',       hide);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { hide(); el.blur(); }
+    });
   });
 }
 
@@ -85,10 +92,14 @@ function countUp(el, target, suffix = '', duration = 900) {
 
 // ---- Boot ----
 async function init() {
-  const buster = `?t=${Date.now()}`;
-  const fetchOptional = (url) => fetch(url + buster).then(r => r.ok ? r.json() : null).catch(() => null);
+  // H5: no cache-buster on the initial load. vercel.json sets the right
+  // s-maxage / stale-while-revalidate per file class — adding ?t=… to every
+  // URL would make each request a unique CDN cache key (origin hit per
+  // visitor) AND it would defeat the <link rel="preload"> for predictions.json
+  // because the preloaded URL would never match the busted one.
+  const fetchOptional = (url) => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
   const [data, cal, wf, abl, travel, liveState, liveDelta, livePred, matchdayIntel] = await Promise.all([
-    fetch('./predictions.json' + buster).then(r => r.json()),
+    fetch('./predictions.json').then(r => r.json()),
     fetchOptional('./calibration.json'),
     fetchOptional('./walk_forward.json'),
     fetchOptional('./ablation.json'),
@@ -102,26 +113,48 @@ async function init() {
   window._cal = cal;
   window._travel = travel;
   window._liveDelta = liveDelta;
+  window._livePred = livePred;
   window._charts = [];
+  // P1-F: seed the polling cache from the first-load values so the next tick
+  // doesn't re-download the heavy files when nothing's changed.
+  _lastFetchedTs = liveState?.last_updated_utc || null;
+  _lastLivePred  = livePred  || null;
+  _lastLiveDelta = liveDelta || null;
 
-  initTooltips();
-  renderLastUpdated(data, liveState);
-  renderLiveStatusBar(liveState);
-  renderHero(data, liveState, liveDelta);
-  renderStatsStrip(data, cal);
-  renderStorylines(data, travel);
-  renderMovers(data, liveState, liveDelta);
-  renderContenders(data, liveDelta, travel);
-  renderGroups(data);
-  renderInteresting(data);
-  renderMatches(data, liveState);
-  renderCompare(data, travel);
-  renderAllCharts(data, cal);
-  if (wf) renderWalkForward(wf);
-  if (abl) renderAblation(abl);
-  if (travel) renderTravel(travel);
-  renderMatchdayIntelligence(matchdayIntel);
-  renderFooter(data, liveState);
+  // C6: when the orchestrator has flipped to live mode AND predictions_live
+  // is parseable, every hero/contenders/groups/matches view reads from THAT
+  // file. The static `data` stays around as the pre-tournament baseline for
+  // delta calculations (movers, badges).
+  const primary = pickPrimaryData(data, livePred, liveState);
+  window._primary = primary;
+
+  // P0-A: wrap every render so a single broken section never wipes the page.
+  // The narrow init().catch at the bottom of this file now only catches
+  // predictions.json load failure — everything else degrades in-place.
+  const safe = (fn, label) => {
+    try { fn(); }
+    catch (e) { console.warn('[render] ' + label + ' failed:', e); }
+  };
+
+  safe(() => initTooltips(),                                    'initTooltips');
+  safe(() => renderLastUpdated(primary, liveState),             'renderLastUpdated');
+  safe(() => renderLiveStatusBar(liveState),                    'renderLiveStatusBar');
+  safe(() => renderLiveStrip(liveState),                        'renderLiveStrip');
+  safe(() => renderHero(primary, liveState, liveDelta),         'renderHero');
+  safe(() => renderStatsStrip(primary, cal),                    'renderStatsStrip');
+  safe(() => renderStorylines(primary, travel),                 'renderStorylines');
+  safe(() => renderMovers(primary, liveState, liveDelta),       'renderMovers');
+  safe(() => renderContenders(primary, liveDelta, travel),      'renderContenders');
+  safe(() => renderGroups(primary),                             'renderGroups');
+  safe(() => renderInteresting(primary),                        'renderInteresting');
+  safe(() => renderMatches(primary, liveState),                 'renderMatches');
+  safe(() => renderCompare(primary, travel),                    'renderCompare');
+  safe(() => renderAllCharts(primary, cal),                     'renderAllCharts');
+  if (wf)     safe(() => renderWalkForward(wf), 'renderWalkForward');
+  if (abl)    safe(() => renderAblation(abl),   'renderAblation');
+  if (travel) safe(() => renderTravel(travel),  'renderTravel');
+  safe(() => renderMatchdayIntelligence(matchdayIntel),         'renderMatchdayIntelligence');
+  safe(() => renderFooter(primary, liveState),                  'renderFooter');
 
   // Apply deep link AFTER renders settle
   applyDeepLink();
@@ -135,33 +168,96 @@ async function init() {
 
 // Re-fetch the three live JSON files. Returns the new triple if any of them
 // changed vs the in-memory snapshot, else null.
+// P1-F: state-first polling.
+// `predictions_live.json` is ~111 KB raw (≈19 KB gzipped). The tick fires
+// every 60 s per open tab; downloading the full file on every tick when
+// nothing has actually moved burns ~1.1 MB/h per visitor on mobile data.
+// State-first design: poll only `live_state.json` (~0.2 KB) and re-fetch the
+// big files **only when `last_updated_utc` has changed since last time**.
+// Returns the same shape applyLiveUpdate expects; reuses cached values for
+// untouched files.
+let _lastFetchedTs = null;
+let _lastLivePred  = null;
+let _lastLiveDelta = null;
+
 async function fetchLiveTriple() {
-  const buster = `?t=${Date.now()}`;
   const fetchOptional = (url) =>
-    fetch(url + buster, { cache: 'no-store' })
+    fetch(url, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null);
-  const [liveState, liveDelta, livePred] = await Promise.all([
-    fetchOptional('./live_state.json'),
+  // Cheap probe first — only ~0.2 KB.
+  const liveState = await fetchOptional('./live_state.json');
+  if (!liveState) {
+    return { liveState: null, liveDelta: _lastLiveDelta, livePred: _lastLivePred };
+  }
+  const ts = liveState.last_updated_utc;
+  // Same timestamp as last tick → nothing changed; skip the big fetches and
+  // return the cached values. The caller still gets liveState for the bar.
+  if (ts && ts === _lastFetchedTs && (_lastLivePred || _lastLiveDelta)) {
+    return { liveState, liveDelta: _lastLiveDelta, livePred: _lastLivePred };
+  }
+  // Timestamp moved — refresh the big files in parallel.
+  const [liveDelta, livePred] = await Promise.all([
     fetchOptional('./live_delta.json'),
     fetchOptional('./predictions_live.json'),
   ]);
+  _lastFetchedTs  = ts || _lastFetchedTs;
+  _lastLiveDelta  = liveDelta || _lastLiveDelta;
+  _lastLivePred   = livePred  || _lastLivePred;
   return { liveState, liveDelta, livePred };
 }
 
+// C6: choose authoritative data per-tick. When the orchestrator has flipped
+// to live mode AND predictions_live carries a populated team_predictions
+// list, that file is the truth — hero/contenders/groups/matches all render
+// from it. The static `predictions.json` stays the baseline that delta
+// calculations diff against (handled by liveDelta + window._data).
+function pickPrimaryData(staticData, livePred, liveState) {
+  const isLive = liveState?.mode === 'live';
+  const livePredOk = livePred
+    && Array.isArray(livePred.team_predictions)
+    && livePred.team_predictions.length > 0
+    && Array.isArray(livePred.match_predictions);
+  return (isLive && livePredOk) ? livePred : staticData;
+}
+
 function applyLiveUpdate({ liveState, liveDelta, livePred }) {
-  const data = window._data;
+  const staticData = window._data;
   const travel = window._travel;
   const cal = window._cal;
   window._liveDelta = liveDelta;
   window._livePred = livePred;
-  renderLastUpdated(data, liveState);
-  renderLiveStatusBar(liveState);
-  renderHero(data, liveState, liveDelta);
-  renderMovers(data, liveState, liveDelta);
-  renderContenders(data, liveDelta, travel);
-  renderMatches(data, liveState);
-  renderFooter(data, liveState);
+  // C6: recompute the primary view each tick. If the orchestrator just
+  // flipped from pre_tournament to live (first FT result), the next tick
+  // will pick up the live file here and re-render the hero/contenders/
+  // groups/matches with locked scores and live-adjusted percentages.
+  const primary = pickPrimaryData(staticData, livePred, liveState);
+  window._primary = primary;
+  // P0-A: wrap each render so a single broken section never wipes the page.
+  const safe = (fn, label) => {
+    try { fn(); }
+    catch (e) { console.warn('[live] ' + label + ' failed:', e); }
+  };
+  safe(() => renderLastUpdated(primary, liveState),       'renderLastUpdated');
+  safe(() => renderLiveStatusBar(liveState),              'renderLiveStatusBar');
+  safe(() => renderLiveStrip(liveState),                  'renderLiveStrip');
+  safe(() => renderHero(primary, liveState, liveDelta),   'renderHero');
+  safe(() => renderMovers(primary, liveState, liveDelta), 'renderMovers');
+  safe(() => renderContenders(primary, liveDelta, travel),'renderContenders');
+  safe(() => renderGroups(primary),                       'renderGroups');
+  safe(() => renderMatches(primary, liveState),           'renderMatches');
+  safe(() => renderFooter(primary, liveState),            'renderFooter');
+  // P1-H: charts (title-prob, confederation, calibration) read from `primary`
+  // too. Without rebuilding them on a live tick the contenders table moves
+  // while the chart next to it shows pre-tournament numbers — visually
+  // contradictory. Mirror the destroy + rebuild pattern used by the theme
+  // toggle, and guard with typeof Chart so a blocked CDN doesn't tank the
+  // tick.
+  if (typeof Chart !== 'undefined') {
+    if (window._charts) window._charts.forEach(c => { try { c.destroy(); } catch {} });
+    window._charts = [];
+    safe(() => renderAllCharts(primary, cal), 'renderAllCharts');
+  }
 }
 
 let _livePollTimer = null;
@@ -193,10 +289,30 @@ function startLivePolling(intervalMs = 60_000) {
 }
 
 function renderAllCharts(data, cal) {
-  renderTitleChart(data);
-  renderConfedChart(data);
-  renderFeatureChart(data);
-  if (cal) renderCalibration(cal);
+  // P0-A: degrade gracefully when Chart.js is blocked (ad-blocker, corporate
+  // proxy, jsdelivr outage). Without this guard, every Chart() reference
+  // throws ReferenceError, the broad init().catch fires, and the entire
+  // dashboard becomes "Could not load data".
+  if (typeof Chart === 'undefined') {
+    document.querySelectorAll('.chart-card, [data-chart-host]').forEach(c => {
+      const note = document.createElement('p');
+      note.className = 'muted small';
+      note.style.cssText = 'padding:16px;text-align:center;';
+      note.textContent = 'Charts unavailable (Chart.js blocked) — all tables and probabilities above are unaffected.';
+      // Preserve titles/headings inside the card; only replace canvases.
+      c.querySelectorAll('canvas').forEach(cv => cv.replaceWith(note.cloneNode(true)));
+    });
+    return;
+  }
+  // Wrap each chart render so one chart failing doesn't tank the others.
+  const safe = (fn, label) => {
+    try { fn(); }
+    catch (e) { console.warn('[charts] ' + label + ' failed:', e); }
+  };
+  safe(() => renderTitleChart(data),   'titleChart');
+  safe(() => renderConfedChart(data),  'confedChart');
+  safe(() => renderFeatureChart(data), 'featureChart');
+  if (cal) safe(() => renderCalibration(cal), 'calibration');
 }
 
 function renderLastUpdated(data, liveState) {
@@ -250,6 +366,36 @@ function formatLockedScore(ls) {
   return base;
 }
 
+// P1-G: render the in-play LIVE strip above the hero. Hidden when there are
+// no matches in progress. Cheap; no DOM-listener accumulation.
+function renderLiveStrip(liveState) {
+  const strip = document.getElementById('live-strip');
+  if (!strip) return;
+  const in_play = (liveState && Array.isArray(liveState.in_play))
+    ? liveState.in_play : [];
+  if (!in_play.length) {
+    strip.hidden = true;
+    strip.innerHTML = '';
+    return;
+  }
+  const cards = in_play.slice(0, 5).map(m => {
+    const hs = (m.home_score == null) ? '—' : m.home_score;
+    const as = (m.away_score == null) ? '—' : m.away_score;
+    const elapsed = (m.elapsed != null) ? `${m.elapsed}'` : (m.status_long || 'LIVE');
+    return `<span class="ls-match">
+      <span class="ls-team">${escapeHtml(m.home || '?')}</span>
+      <span class="ls-score">${escapeHtml(String(hs))}–${escapeHtml(String(as))}</span>
+      <span class="ls-team">${escapeHtml(m.away || '?')}</span>
+      <span class="ls-elapsed">${escapeHtml(elapsed)}</span>
+    </span>`;
+  }).join('');
+  const more = in_play.length > 5 ? `<span class="muted small">+${in_play.length - 5} more</span>` : '';
+  strip.innerHTML = `
+    <span class="ls-label"><span class="ls-dot" aria-hidden="true"></span>Live now</span>
+    ${cards}${more}`;
+  strip.hidden = false;
+}
+
 function renderLiveStatusBar(liveState) {
   if (!liveState) return;
   const banner = document.getElementById('live-status');
@@ -285,7 +431,7 @@ function renderHero(data, liveState, liveDelta) {
 
   const dh = darkHorse(data);
   document.getElementById('dh-team').innerHTML = `${confedDotHtml(dh.team)}${escapeHtml(dh.team)}`;
-  document.getElementById('dh-prob').textContent = `${fmt(dh.p_reach_sf)} reach SF · Elo ${Math.round(dh.elo)}`;
+  document.getElementById('dh-prob').textContent = `${fmt(dh.p_reach_sf)} reach SF · Model Elo ${Math.round(dh.elo)}`;
 
   const isLive = liveState?.mode === 'live';
   document.getElementById('mode-label').textContent = isLive ? 'Live-adjusted' : 'Pre-tournament';
@@ -294,9 +440,22 @@ function renderHero(data, liveState, liveDelta) {
     : 'Pre-kickoff · 0 of 104 matches locked';
 }
 
+// P1-I: rank dark horses by champion probability *outside the top-6 by
+// p_champion* instead of "outside the top-8 by Model Elo". The previous
+// definition leaned on our internal Elo (which trends ~50–100 above public
+// scales like eloratings.net), so traditional powerhouses like Germany
+// were getting crowned "dark horses" purely because of Elo-scale drift —
+// reads wrong to anyone who cross-checks.
 function darkHorse(data) {
-  const top8 = new Set([...data.team_predictions].sort((a,b) => b.elo - a.elo).slice(0,8).map(t => t.team));
-  return data.team_predictions.filter(t => !top8.has(t.team)).sort((a,b) => b.p_reach_sf - a.p_reach_sf)[0];
+  const sortedByChamp = [...data.team_predictions].sort(
+    (a, b) => b.p_champion - a.p_champion);
+  const headlineTop = new Set(sortedByChamp.slice(0, 6).map(t => t.team));
+  // Eligibility: clearly outside the headline + still has real run potential
+  // (p_champion ≥ 1%). Among those, the team with the best p_reach_sf wins.
+  const pool = sortedByChamp.filter(
+    t => !headlineTop.has(t.team) && t.p_champion >= 0.01);
+  const winner = pool.sort((a, b) => b.p_reach_sf - a.p_reach_sf)[0];
+  return winner || sortedByChamp[6] || sortedByChamp[0];
 }
 
 function renderStatsStrip(data, cal) {
@@ -356,7 +515,7 @@ function renderStorylines(data, travel) {
     {
       icon: icon(`<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>`),
       label: 'Strongest favourite', team: fav.team,
-      stat: `Won ${fmt(fav.p_champion)} of simulations · Elo ${Math.round(fav.elo)}`,
+      stat: `Won ${fmt(fav.p_champion)} of simulations · Model Elo ${Math.round(fav.elo)}`,
       link: `#team=${encodeURIComponent(fav.team)}`,
     },
     {
@@ -413,7 +572,7 @@ function renderMovers(data, liveState, liveDelta) {
         </div>
         <div>
           <strong>No matches have finished yet.</strong>
-          <span class="muted small"> Champion-probability deltas will appear here automatically as matches lock during the tournament. The simulator re-runs every 15 minutes during the matchday window (11 Jun → 19 Jul 2026).</span>
+          <span class="muted small"> Champion-probability deltas will appear here automatically as matches lock during the tournament. The simulator re-runs every 10 minutes during the matchday window (11 Jun → 19 Jul 2026), gated on real input changes so it only fires when there's actually new data.</span>
         </div>
       </div>`;
     return;
@@ -518,7 +677,7 @@ function renderContenders(data, liveDelta, travel) {
     if (t.elo > 2100) chips.push(`elite Elo (${Math.round(t.elo)})`);
     if (t.p_advance_groups > 0.85) chips.push(`almost-certain qualifier`);
     if (t.p_advance_groups < 0.6) chips.push(`group exit risk`);
-    if (groupStrength > 1900) chips.push(`hard group (avg Elo ${Math.round(groupStrength)})`);
+    if (groupStrength > 1900) chips.push(`hard group (avg Model Elo ${Math.round(groupStrength)})`);
     if (td != null && td > 0.2) chips.push(`+${td.toFixed(2)}pp from travel asymmetry`);
     if (td != null && td < -0.2) chips.push(`${td.toFixed(2)}pp travel drag`);
     if (ciWidth != null && ciWidth < 1) chips.push(`narrow simulation range`);
@@ -611,7 +770,11 @@ function renderContenders(data, liveDelta, travel) {
   function paintHeaderSort() {
     headerCells.forEach(th => {
       th.classList.remove('sort-asc', 'sort-desc');
-      if (th.dataset.sort === sortKey) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      // P2-a11y: live aria-sort reflects state for assistive tech.
+      const isActive = th.dataset.sort === sortKey;
+      th.setAttribute('aria-sort',
+        isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
+      if (isActive) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
     });
   }
 
@@ -636,7 +799,14 @@ function renderContenders(data, liveDelta, travel) {
 
   headerCells.forEach(th => {
     th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
+    // P2-a11y: keyboard reachable + announced as a sortable column.
+    th.setAttribute('tabindex', '0');
+    th.setAttribute('role', 'columnheader');
+    th.setAttribute('aria-sort', th.dataset.sort === sortKey
+      ? (sortDir === 'asc' ? 'ascending' : 'descending')
+      : 'none');
+    th.setAttribute('aria-label', `Sort by ${th.textContent.trim()}`);
+    const doSort = () => {
       const key = th.dataset.sort;
       if (sortKey === key) {
         sortDir = sortDir === 'asc' ? 'desc' : 'asc';
@@ -645,6 +815,10 @@ function renderContenders(data, liveDelta, travel) {
         sortDir = th.dataset.sortDefault || (['team', 'group', 'rank'].includes(key) ? 'asc' : 'desc');
       }
       paint();
+    };
+    th.addEventListener('click', doSort);
+    th.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); }
     });
   });
 
@@ -706,7 +880,10 @@ function renderGroups(data) {
 function renderInteresting(data) {
   const grid = document.getElementById('interesting-grid');
   if (!grid) return;
-  const ms = data.match_predictions;
+  // P1-D: knockout fixtures have no p_home_win/p_away_win pre-resolution.
+  // The "interesting" picks are group-stage-only.
+  const ms = (data.match_predictions || []).filter(
+    m => (m.stage || 'group') === 'group' && typeof m.p_home_win === 'number');
 
   // Pick categories
   const closest = ms.slice().sort((a,b) => {
@@ -793,13 +970,16 @@ function renderMatches(data, liveState) {
   while (groupSel.options.length > 1) groupSel.remove(1);
   while (dateSel.options.length > 1) dateSel.remove(1);
   while (venueSel.options.length > 1) venueSel.remove(1);
-  [...new Set(data.match_predictions.map(m => m.group))].sort().forEach(g => {
+  // P1-D: group dropdown stays group-only (A–L). Dates + venues span all
+  // fixtures including knockouts, so visitors can jump to e.g. "28 Jun".
+  const groupOnly = data.match_predictions.filter(m => (m.stage || 'group') === 'group');
+  [...new Set(groupOnly.map(m => m.group))].sort().forEach(g => {
     const o = document.createElement('option'); o.value = g; o.textContent = `Group ${g}`; groupSel.appendChild(o);
   });
-  [...new Set(data.match_predictions.map(m => m.date))].sort().forEach(d => {
+  [...new Set(data.match_predictions.map(m => m.date).filter(Boolean))].sort().forEach(d => {
     const o = document.createElement('option'); o.value = d; o.textContent = d; dateSel.appendChild(o);
   });
-  [...new Set(data.match_predictions.map(m => m.venue))].sort().forEach(v => {
+  [...new Set(data.match_predictions.map(m => m.venue).filter(Boolean))].sort().forEach(v => {
     const o = document.createElement('option'); o.value = v; o.textContent = v; venueSel.appendChild(o);
   });
 
@@ -807,9 +987,20 @@ function renderMatches(data, liveState) {
   let chip = 'all';
 
   function featuredMatches() {
-    const all = data.match_predictions.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-    const unfinished = all.filter(m => !m.locked_score);
-    return (unfinished.length ? unfinished : all).slice(0, 12);
+    // P1-C: always include the most-recent locked results in the Featured
+    // tab. Without this, the morning after the opener visitors see no
+    // result anywhere above the fold unless they tap "All 72".
+    const all = data.match_predictions.slice().sort(
+      (a, b) => ((a.date || '') + (a.time || '')).localeCompare((b.date || '') + (b.time || '')));
+    const locked = all.filter(m => m.locked_score);
+    // P1-D: keep Featured focused on stuff with simulated probabilities or
+    // a locked result; pure-placeholder knockouts (TBD vs TBD) are noisy
+    // in the Featured grid and live in the All view instead.
+    const unfinished = all.filter(
+      m => !m.locked_score && typeof m.p_home_win === 'number');
+    const recentLocked = locked.slice().reverse().slice(0, 3);
+    const nextUp = unfinished.slice(0, 12 - recentLocked.length);
+    return [...recentLocked, ...nextUp];
   }
 
   function chipMatches(m) {
@@ -838,8 +1029,15 @@ function renderMatches(data, liveState) {
       if (d !== 'all' && m.date !== d) return false;
       if (vn !== 'all' && m.venue !== vn) return false;
       if (!chipMatches(m)) return false;
-      if (q && !(m.home.toLowerCase().includes(q) || m.away.toLowerCase().includes(q) || m.venue.toLowerCase().includes(q))) return false;
+      // P1-D: knockout placeholders may have slot strings ("1A") in home/
+      // away — still searchable; guard against undefined safely.
+      const homeStr = (m.home || '').toLowerCase();
+      const awayStr = (m.away || '').toLowerCase();
+      const venueStr = (m.venue || '').toLowerCase();
+      if (q && !(homeStr.includes(q) || awayStr.includes(q) || venueStr.includes(q))) return false;
       if (close) {
+        // Close-match filter only applies where probabilities exist.
+        if (typeof m.p_home_win !== 'number') return false;
         const max = Math.max(m.p_home_win, m.p_draw, m.p_away_win);
         if (max > 0.55) return false;
       }
@@ -854,51 +1052,85 @@ function renderMatches(data, liveState) {
       return;
     }
 
+    // P1-D: stage labels for the knockout cards so the header reads
+    // "Round of 32 · 28 Jun" rather than "Grp R32".
+    const STAGE_LABEL = {
+      group: m => `Grp ${m.group}`,
+      r32:   () => 'Round of 32',
+      r16:   () => 'Round of 16',
+      qf:    () => 'Quarter-final',
+      sf:    () => 'Semi-final',
+      '3rd': () => '3rd-place playoff',
+      final: () => 'Final',
+    };
+
     list.innerHTML = filtered.map(m => {
-      const ph = (m.p_home_win * 100).toFixed(0);
-      const pd = (m.p_draw * 100).toFixed(0);
-      const pa = (m.p_away_win * 100).toFixed(0);
-      const winner = m.p_home_win > m.p_away_win
-        ? (m.p_home_win > m.p_draw ? m.home : 'Draw')
-        : (m.p_away_win > m.p_draw ? m.away : 'Draw');
+      const stage = m.stage || 'group';
+      const hasProbs = (typeof m.p_home_win === 'number') && (typeof m.p_away_win === 'number');
+      const ph = hasProbs ? (m.p_home_win * 100).toFixed(0) : null;
+      const pd = hasProbs ? (m.p_draw     * 100).toFixed(0) : null;
+      const pa = hasProbs ? (m.p_away_win * 100).toFixed(0) : null;
+      const winner = hasProbs
+        ? (m.p_home_win > m.p_away_win
+            ? (m.p_home_win > m.p_draw ? m.home : 'Draw')
+            : (m.p_away_win > m.p_draw ? m.away : 'Draw'))
+        : null;
       const tags = [];
+      if (stage !== 'group') {
+        tags.push(`<span class="tag stage">${escapeHtml(STAGE_LABEL[stage]?.(m) || stage)}</span>`);
+      }
       if (m.altitude_m > 1500) tags.push(`<span class="tag alt">⛰ ${m.altitude_m}m</span>`);
       if ((m.climate || '').includes('very_hot')) tags.push('<span class="tag hot">very hot</span>');
       else if ((m.climate || '').includes('hot')) tags.push('<span class="tag hot">hot</span>');
       const travel = Math.max(m.home_travel_km || 0, m.away_travel_km || 0);
       if (travel > 2500) tags.push(`<span class="tag travel">${(travel/1000).toFixed(1)}k km</span>`);
-      // A.6: locked_score is now a structured object (post-A.2); formatLockedScore
-      // handles FT / AET / PEN correctly. The (X-Y pens) suffix on shootouts is
-      // critical — without it, a 0-0 (3-0 pens) win renders as a misleading draw.
       const lockedLabel = formatLockedScore(m.locked_score);
       if (lockedLabel) tags.push(`<span class="tag locked">final ${escapeHtml(lockedLabel)}</span>`);
 
+      // Knockout placeholders — when team is just the slot label ("1A",
+      // "W101") suppress the confed dot so a non-team string doesn't try
+      // to look up a flag.
+      const homeName = m.home || m.slot_a || 'TBD';
+      const awayName = m.away || m.slot_b || 'TBD';
+      const homeIsSlot = (stage !== 'group') && (m.slot_a && homeName === m.slot_a);
+      const awayIsSlot = (stage !== 'group') && (m.slot_b && awayName === m.slot_b);
+      const homeDot  = homeIsSlot ? '' : confedDotHtml(homeName);
+      const awayDot  = awayIsSlot ? '' : confedDotHtml(awayName);
+
+      const headLabel = (stage === 'group')
+        ? `M${m.m} · Grp ${escapeHtml(m.group)}`
+        : `M${m.m} · ${escapeHtml(STAGE_LABEL[stage]?.(m) || stage)}`;
+
       return `<div class="card match" id="match-${m.m}">
         <div class="match-head">
-          <span class="pill">M${m.m} · Grp ${escapeHtml(m.group)}</span>
-          <span>${escapeHtml(m.date)} ${escapeHtml(m.time)} · ${escapeHtml(m.venue)}</span>
+          <span class="pill">${headLabel}</span>
+          <span>${escapeHtml(m.date)}${m.time ? ' ' + escapeHtml(m.time) : ''} · ${escapeHtml(m.venue)}</span>
         </div>
         ${tags.length ? `<div class="venue-tags">${tags.join('')}</div>` : ''}
         <div class="match-teams">
           <div class="team-home">
-            <div class="team-name">${confedDotHtml(m.home)}${escapeHtml(m.home)}</div>
-            <span class="team-lambda">λ ${m.lam_home.toFixed(2)}</span>
+            <div class="team-name">${homeDot}${escapeHtml(homeName)}</div>
+            ${hasProbs ? `<span class="team-lambda">λ ${m.lam_home.toFixed(2)}</span>` : ''}
           </div>
           <div class="vs">vs</div>
           <div class="team-away">
-            <div class="team-name">${confedDotHtml(m.away)}${escapeHtml(m.away)}</div>
-            <span class="team-lambda">λ ${m.lam_away.toFixed(2)}</span>
+            <div class="team-name">${awayDot}${escapeHtml(awayName)}</div>
+            ${hasProbs ? `<span class="team-lambda">λ ${m.lam_away.toFixed(2)}</span>` : ''}
           </div>
         </div>
+        ${hasProbs ? `
         <div class="prob-bar">
-          <div class="ph" style="width:${ph}%" title="${escapeHtml(m.home)} win">${ph}%</div>
+          <div class="ph" style="width:${ph}%" title="${escapeHtml(homeName)} win">${ph}%</div>
           <div class="pd" style="width:${pd}%" title="Draw">${pd}%</div>
-          <div class="pa" style="width:${pa}%" title="${escapeHtml(m.away)} win">${pa}%</div>
+          <div class="pa" style="width:${pa}%" title="${escapeHtml(awayName)} win">${pa}%</div>
         </div>
         <div class="match-meta">
-          <span>Elo ${Math.round(m.elo_home)} vs ${Math.round(m.elo_away)}</span>
+          <span>Model Elo ${Math.round(m.elo_home)} vs ${Math.round(m.elo_away)}</span>
           <span>Predicted: <strong>${escapeHtml(winner)}</strong></span>
-        </div>
+        </div>` : `
+        <div class="match-meta muted small">
+          <span>Bracket TBD — teams resolve as group stage completes.</span>
+        </div>`}
       </div>`;
     }).join('');
   }
@@ -1004,7 +1236,7 @@ function renderCompare(data, travel) {
         ${row('Reach QF',           ta.p_reach_qf,           tb.p_reach_qf,           fmt)}
         ${row('Advance from group', ta.p_advance_groups,     tb.p_advance_groups,     fmt0)}
         ${row('Win group',          ta.p_finish_1st_group,   tb.p_finish_1st_group,   fmt0)}
-        ${row('Elo',                ta.elo,                  tb.elo,                  v => Math.round(v))}
+        ${row('Model Elo',          ta.elo,                  tb.elo,                  v => Math.round(v))}
         ${row('FIFA points',        ta.fifa_pts,             tb.fifa_pts,             v => v ? v.toFixed(0) : '—')}
         ${row('Squad value (€M)',   ta.squad_value_eur_m,    tb.squad_value_eur_m,    fmtNum)}
         ${row('Group travel (km)',  travelKm[ta.team],       travelKm[tb.team],       v => Math.round(v).toLocaleString(), false)}
@@ -1332,8 +1564,9 @@ function renderMatchdayIntelligence(intel) {
   if (active.length === 0) {
     table = `<div class="md-empty muted small">
       No teams currently affected. Layers will populate as fetchers run
-      (injuries hourly, weather every 3h, lineups within the 4h kickoff
-      window, stats after each FT match).
+      (injuries, weather, and lineups every 3h on the slow workflow; the
+      lineups fetcher additionally targets fixtures inside a 4h kickoff
+      window; stats after each FT match).
     </div>`;
   } else {
     const rows = active
@@ -1371,5 +1604,31 @@ function renderMatchdayIntelligence(intel) {
 }
 
 init().catch(err => {
-  document.body.innerHTML = `<div style="padding:40px;color:var(--danger);font-family:system-ui"><h2>Could not load data</h2><pre>${escapeHtml(err.stack || err)}</pre></div>`;
+  // M11: inherit the theme so a JSON outage doesn't flash white-on-dark.
+  // Variables come from styles.css :root rules — same fallback colour
+  // tokens used by the rest of the app.
+  document.body.innerHTML = `
+    <div style="
+      padding: 40px;
+      min-height: 100vh;
+      background: var(--bg, #0b0e14);
+      color: var(--fg, #e7ecf3);
+      font-family: var(--font-sans, system-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    ">
+      <h2 style="color: var(--danger, #ff6b6b); margin: 0 0 12px;">Could not load data</h2>
+      <p style="color: var(--fg-muted, #9ba3b4); margin: 0 0 16px;">
+        The dashboard couldn't fetch <code>predictions.json</code>. The page will retry on reload.
+      </p>
+      <pre style="
+        background: var(--bg-panel, #141821);
+        border: 1px solid var(--border, #20242e);
+        border-radius: 6px;
+        padding: 12px;
+        overflow: auto;
+        color: var(--fg-muted, #9ba3b4);
+        font-size: 12px;
+      ">${escapeHtml(err.stack || err)}</pre>
+    </div>`;
 });

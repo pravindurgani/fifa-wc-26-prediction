@@ -96,3 +96,27 @@
 .apx-dl-list { padding-left: 18px; }
 .apx-dl-list li { margin: 6px 0; font-size: 13px; }
 .apx-dl-list code { font-family: var(--font-mono); background: var(--surface-elev); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+
+/* P1-A: mobile clipping fix for the appendix.
+   Measured @ 390px: body scrollWidth = 986px due to wide formulas, code,
+   and tables inside .explain cards leaking past the icon column. The grid
+   needs `min-width: 0` on the content cell + scrollable overflow on the
+   wide children. Below 600px the icon column collapses entirely. */
+.explain > *:not(.explain-icon) { min-width: 0; }
+.explain pre, .explain code, .explain table, .apx-tbl { max-width: 100%; }
+.explain pre, .eqn { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.explain table, .apx-tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 600px) {
+  .explain {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 16px;
+  }
+  .explain-icon { display: none; }
+  .explain h2 { font-size: 17px; }
+  .eqn, .explain pre { font-size: 11px; padding: 10px 12px; }
+  .apx-tbl { font-size: 12px; }
+  .apx-tbl thead th, .apx-tbl tbody td { padding: 8px 8px; }
+  /* Section padding shrinks so prose runs edge-to-edge with breathing room. */
+  section { padding-left: 12px; padding-right: 12px; }
+}

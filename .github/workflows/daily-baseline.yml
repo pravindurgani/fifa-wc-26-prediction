@@ -12,12 +12,20 @@ concurrency:
   group: wc26-baseline
   cancel-in-progress: true
 
+# C5: bot needs write access to commit the regenerated artifacts.
+permissions:
+  contents: write
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 so the rebase-on-push protect-merge step has the
+          # full history needed when racing live-matchday's commits.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -53,6 +61,9 @@ jobs:
           cp models/ablation.json dashboard/
           if [ -f models/sensitivity.json ]; then cp models/sensitivity.json dashboard/; fi
 
+      - name: Regenerate README tables from latest predictions (P1-I)
+        run: python scripts/10_regen_readme.py
+
       - name: Validate
         run: python scripts/09_validate.py
 
@@ -61,11 +72,63 @@ jobs:
           name: dashboard-baseline-${{ github.run_id }}
           path: dashboard/*.json
 
-      # Uncomment when Vercel secrets are configured
-      # - uses: amondnet/vercel-action@v25
-      #   with:
-      #     vercel-token: ${{ secrets.VERCEL_TOKEN }}
-      #     vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-      #     vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-      #     working-directory: dashboard
-      #     vercel-args: '--prod'
+      # C5: actually commit the refreshed artifacts back to the repo so the
+      # deployed dashboard sees them. Without this, every daily retrain ran
+      # against /dev/null — artifact upload only. Mirrors the rebase-on-push
+      # pattern used by live-matchday.yml.
+      - name: Commit refreshed baseline artifacts (if changed)
+        run: |
+          set +e
+          git config user.name "wc26-bot"
+          git config user.email "wc26-bot@users.noreply.github.com"
+          # Explicit allow-list — dashboard JSON, model joblibs + cleaned
+          # parquet (C1), evaluation metrics, processed elo ratings.
+          git add README.md \
+                  dashboard/predictions.json \
+                  dashboard/calibration.json \
+                  dashboard/travel_impact.json \
+                  dashboard/walk_forward.json \
+                  dashboard/ablation.json \
+                  dashboard/sensitivity.json \
+                  data/processed/predictions.json \
+                  data/processed/predictions_no_travel.json \
+                  data/processed/calibration.json \
+                  data/processed/travel_impact.json \
+                  data/processed/elo_ratings.json \
+                  data/processed/matches_clean.parquet \
+                  models/home_goals_model.joblib \
+                  models/away_goals_model.joblib \
+                  models/feature_cols.json \
+                  models/feature_cols_v2.json \
+                  models/metrics.json \
+                  models/metrics_v2.json \
+                  models/walk_forward.json \
+                  models/ablation.json \
+                  models/sensitivity.json \
+                  models/evaluation.json 2>/dev/null
+          if git diff --quiet --cached; then
+            echo "No baseline changes to commit."
+            exit 0
+          fi
+          git commit -m "baseline: refresh @ $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Rebase against the same branch we push to — live-matchday may have
+          # landed a tick in parallel.
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          git pull --rebase origin "$BRANCH" || echo "Rebase failed — pushing anyway."
+          git push origin "HEAD:$BRANCH" || echo "Push failed — next daily run will retry."
+          exit 0
+
+      # C5: direct Vercel deploy. Mirror live-matchday's pattern.
+      # Set up: gh secret set VERCEL_TOKEN, gh variable set VERCEL_ORG_ID /
+      # VERCEL_PROJECT_ID, then every daily baseline auto-deploys.
+      - name: Deploy refreshed baseline to Vercel
+        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+        run: |
+          set +e
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest deploy --prod --yes --token="$VERCEL_TOKEN" --no-clipboard
+          exit 0

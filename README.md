@@ -72,9 +72,13 @@ vercel deploy --prod
 
 **Option 2: GitHub Pages** — push to a repo, enable Pages from `dashboard/`.
 
-**Daily refresh**: `.github/workflows/refresh-predictions.yml` runs the full pipeline twice
-a day, runs the validator, and uploads fresh JSON. Uncomment the Vercel deploy step and
-add `VERCEL_TOKEN` / `VERCEL_ORG_ID` / `VERCEL_PROJECT_ID` secrets to auto-deploy.
+**Daily refresh**: `.github/workflows/daily-baseline.yml` runs the full pipeline once a
+day at 05:00 UTC — validator gate, then commits the regenerated model + parquet +
+dashboard JSON back to the repo. When `VERCEL_TOKEN` / `VERCEL_ORG_ID` /
+`VERCEL_PROJECT_ID` are set, the workflow also runs `vercel deploy --prod` directly.
+**Live matchday refresh** (`live-matchday.yml`) polls every 10 minutes during the
+10 Jun – 20 Jul window, hash-gated to re-simulate only when results, matchday intel,
+or team-state actually changed.
 
 ## Live mode (during the tournament)
 
@@ -192,27 +196,42 @@ fifa-wc-26-prediction/
 
 ## Model performance (v3)
 
-| Metric                          | Value  | Baseline | Lift |
-|---|---|---|---|
-| Holdout log-loss                | 0.869  | Elo-only 0.908, naive 1.055 | +0.039 vs Elo |
-| Holdout Brier                   | 0.511  | Elo-only 0.535            | +0.024 vs Elo |
-| Holdout accuracy                | 60.2%  | always-home ≈ 48%         | +12pp |
-| WC walk-forward avg log-loss    | 0.983  | naive 1.09                 | +0.10 honest |
-| Calibration                     | ✓     | predicted 0.85 → actual 0.85 |  |
-| Annex C lookup misses           | 0     | (target: 0 / 25,000+ sims) |  |
+<!-- AUTO:MODEL_METRICS:BEGIN -->
+| Metric                          | Value  | Notes |
+|---|---|---|
+| Holdout log-loss                | 0.869 | lower is better |
+| Holdout Brier                   | 0.511 | lower is better |
+| Holdout accuracy                | 60.2% | always-home ≈ 48% |
+| WC walk-forward avg log-loss    | 0.983 | mean across 2010/14/18/22 |
+| Annex C lookup misses           | 0     | target 0 / 25,000+ sims |
+<!-- AUTO:MODEL_METRICS:END -->
 
+> **Honest disclosure on the walk-forward.** The avg-vs-naive lift is +0.10 over 2010/14/18/22,
+> but 2022 lift vs the Elo-only baseline collapses to **+0.0085** (essentially zero). The
+> goal model holds up at WCs that look like the training distribution and adds little at
+> WCs that don't. 2026 may or may not look like 2022 — treat any single-tournament narrative
+> with skepticism.
+
+<!-- AUTO:TOP_CONTENDERS:BEGIN -->
 ## Top contenders (latest run — 25,000 sims, 5 seeds × 5,000)
 
-| # | Team       | Champion | 95% CI       | Reach SF | Elo  |
+| # | Team       | Champion | 95% CI       | Reach SF | Model Elo |
 |---|---|---|---|---|---|
-| 1 | Spain      | 24.9%    | [24.3, 25.8] | 49.0%    | 2209 |
-| 2 | Argentina  | 20.4%    | [19.4, 21.3] | 39.5%    | 2174 |
-| 3 | France     | 8.4%     | [8.2, 8.5]   | 26.9%    | 2116 |
-| 4 | England    | 6.4%     | [6.0, 6.7]   | 21.0%    | 2081 |
-| 5 | Brazil     | 5.4%     | [4.9, 5.9]   | 23.4%    | 2054 |
-| 6 | Colombia   | 4.9%     | [4.8, 5.1]   | 18.9%    | 2049 |
+| 1 | Spain      | 24.6% | [24.3, 25.2] | 49.6% | 2209 |
+| 2 | Argentina  | 18.8% | [18.4, 19.0] | 43.7% | 2174 |
+| 3 | France     | 9.3% | [8.9, 9.8] | 28.8% | 2116 |
+| 4 | England    | 6.5% | [6.3, 6.7] | 23.1% | 2081 |
+| 5 | Brazil     | 5.2% | [4.9, 5.5] | 21.6% | 2054 |
+| 6 | Colombia   | 5.0% | [4.6, 5.3] | 19.0% | 2049 |
+<!-- AUTO:TOP_CONTENDERS:END -->
 
-Concentration: top-1 24.9%, top-2 45.3%, top-5 65.5%. Within bookmaker norms.
+> "Model Elo" is the in-repo Elo (modified Glicko base + extra friendlies +
+> exponential time decay). It runs ~50–100 above public scales like
+> eloratings.net by design; rank order is what's meaningful, not absolute values.
+
+Both the metrics and the contenders tables above are regenerated nightly
+from `data/processed/predictions.json` by `scripts/10_regen_readme.py` — do
+not edit by hand.
 
 ## Travel impact (group stage)
 

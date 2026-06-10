@@ -20,6 +20,7 @@ CLI:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -31,6 +32,11 @@ import numpy as np
 import pandas as pd
 from scipy.stats import nbinom, poisson
 
+# C3: grand-total cap for (live_team_state + matchday_intel) per team. Mirrors
+# GRAND_TOTAL_CAP in apply_matchday_adjustments.py — kept in sync; if you
+# change one, change both.
+GRAND_TOTAL_CAP_ELO = 45.0
+
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 PROC = ROOT / "data" / "processed"
@@ -40,7 +46,22 @@ sys.path.insert(0, str(ROOT / "scripts" / "live"))   # B.1: for apply_matchday_a
 from tiebreakers import rank_group, rank_third_placed
 
 HOST_COUNTRIES = {"Mexico", "United States", "Canada"}
-ALTITUDE_ADAPTED = {"Bolivia", "Ecuador", "Peru", "Colombia", "Mexico"}
+# P2: South Africa added — Johannesburg sits at ~1750m, so the SAFA squad
+# pool plays much of its football at altitude and shouldn't take the full
+# very-hot acclimatisation penalty either (handled separately via HEAT_ADAPTED).
+ALTITUDE_ADAPTED = {"Bolivia", "Ecuador", "Peru", "Colombia", "Mexico", "South Africa"}
+
+# P2: confederations + countries that train and play in extreme heat year-round
+# and shouldn't take the European-temperate-side heat penalty in very-hot WC
+# venues (Houston, Miami, Monterrey, Arlington indoor-cooling-or-not, etc.).
+# CONMEBOL/CAF/Gulf-AFC pulled in via climate_penalty_elo's confed filter; this
+# set covers explicit team-name overrides (AFC sides outside the Gulf or the
+# CONCACAF teams that grew up in heat).
+HEAT_ADAPTED = {
+    "Saudi Arabia", "Qatar", "Iraq", "Jordan", "Iran",
+    "United States", "Mexico", "Panama", "Haiti", "Curacao",
+    "Australia",
+}
 
 # Model defaults — tunable via sensitivity analysis
 DEFAULTS = dict(
@@ -80,6 +101,9 @@ def climate_penalty_elo(team, climate, confed, cfg):
     if "very_hot" not in (climate or ""): return 0.0
     if confed.get(team) in {"CONMEBOL", "CAF"}: return 0.0
     if confed.get(team) == "CONCACAF" and team != "Canada": return 0.0
+    # P2: explicit team-name overrides for heat-adapted nations the confed
+    # filter alone would miss (Gulf AFC sides, Australia, Iran, etc.).
+    if team in HEAT_ADAPTED: return 0.0
     return -cfg["heat_penalty"]
 
 
@@ -267,6 +291,12 @@ def decide_knockout(team_a, team_b, m_num, locked, mat, lam_h, lam_a, e_h, e_a, 
         # In practice fetch_results refuses to lock a PEN match without a
         # winner (see A.2), so this path triggers only for group-stage drafts
         # accidentally indexed here.
+        # M6: log loud so this defensive branch never silently swallows a
+        # bad fixture record. Awarding team_b on a tie without a winner is a
+        # last-resort guess — the operator should see it.
+        print(f"[decide_knockout] WARN: locked knockout m={m_num} {team_a} vs {team_b} "
+              f"has no winner field; tie ({h}-{a}) defaults to {'team_a' if h > a else 'team_b'}",
+              file=sys.stderr)
         return h, a, (team_a if h > a else team_b)
     # Not locked — sample as before.
     h, a, _ = resolve_knockout(mat, lam_h, lam_a, e_h, e_a, cfg, rng)
@@ -607,20 +637,73 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
     # elo_eff_base — that would double-count, since _matchday_intel pulls
     # the same source via injuries_2026.json + team_adjustments.json overlay.
     try:
-        from apply_matchday_adjustments import get_team_elo_adjustment as _matchday_intel
+        from apply_matchday_adjustments import get_team_elo_adjustment as _matchday_intel_raw
     except ImportError:
         # If the module is missing for any reason (test env, partial
         # checkout), fail closed: zero adjustment.
-        def _matchday_intel(team, match_id=None, reload=False):
+        def _matchday_intel_raw(team, match_id=None, reload=False):
             return 0.0
+
+    # H3: gate matchday intel behind --no-adjustments. Without this, the
+    # baseline run (which is meant to be the clean static reference that
+    # live_delta diffs against) silently picks up whatever weather/lineup
+    # signal exists at sim time, contaminating the delta.
+    use_intel = bool(cfg.get("use_adjustments", True))
+
+    def _matchday_intel(team, match_id=None):
+        if not use_intel:
+            return 0.0
+        return _matchday_intel_raw(team, match_id)
+
+    # C2/C3: compute tournament-wide intel and clamp combined (live_team_state
+    # + tournament_wide_intel) at GRAND_TOTAL_CAP. This becomes the base used
+    # by knockout matrices (whose venue/match context is unknown until the
+    # bracket plays out). Group matches get a *match-scoped* delta added on
+    # top, then re-clamped against the cap per-match.
+    tournament_wide_intel = {t: float(_matchday_intel(t)) for t in all_teams}
+    live_state_by_team = {t: float(live_team_state.get(t, 0.0)) for t in all_teams}
+    base_intel_plus_state = {}
+    grand_cap_applied: dict[str, dict] = {}
+    for t in all_teams:
+        raw_combined = live_state_by_team[t] + tournament_wide_intel[t]
+        capped = max(-GRAND_TOTAL_CAP_ELO, min(GRAND_TOTAL_CAP_ELO, raw_combined))
+        base_intel_plus_state[t] = capped
+        if abs(raw_combined - capped) > 1e-6:
+            grand_cap_applied[t] = {
+                "raw_elo": round(raw_combined, 3),
+                "applied_elo": round(capped, 3),
+                "cap_elo": GRAND_TOTAL_CAP_ELO,
+                "live_team_state": round(live_state_by_team[t], 3),
+                "tournament_wide_intel": round(tournament_wide_intel[t], 3),
+            }
 
     elo_eff_base = {
         t: (elo.get(t, 1500)
             + squad_value_elo(t, squad_vals, sv_log_mean, sv_log_std, cfg)
-            + live_team_state.get(t, 0.0)   # mid-tournament soft Elo delta
-            + _matchday_intel(t))           # B.2/B.3+: injuries/weather/lineups/stats
+            + base_intel_plus_state[t])
         for t in all_teams
     }
+
+    # H2: weather forecasts supersede the static climate prior. Build a set
+    # of (match_id, team) pairs that have a *real* (non-fallback) weather
+    # entry so the per-match loop can zero the static heat penalty there.
+    forecast_weather_keys: set[tuple[int, str]] = set()
+    try:
+        weather_raw_path = ROOT / "data" / "live" / "weather_2026.json"
+        if weather_raw_path.exists():
+            _wdata = json.loads(weather_raw_path.read_text())
+            for w in (_wdata.get("weather") or []):
+                if w.get("confidence") == "static_fallback":
+                    continue
+                m_id = w.get("match_id")
+                if m_id is None:
+                    continue
+                for side in ("home", "away"):
+                    t_name = w.get(f"{side}_team")
+                    if t_name:
+                        forecast_weather_keys.add((m_id, t_name))
+    except Exception as _e:
+        print(f"[03_simulate] weather precedence: ignored failure reading weather_2026.json: {_e}")
 
     # Travel pre-computation
     fixture_travel = {}
@@ -629,8 +712,10 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
 
     # Group match precomputed matrices + lambdas
     group_matrices = []
+    per_match_intel_meta: list[dict] = []
     for m in cfg_data["group_stage_schedule"]:
         h, a = m["home"], m["away"]
+        m_id = m["m"]
         venue = m["venue"]
         city = venue_city_map.get(venue, venue)
         city_meta = host_city_meta.get(city, {})
@@ -643,11 +728,54 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
         alt_a = altitude_penalty_elo(a, altitude, cfg)
         clim_h = climate_penalty_elo(h, climate, confed_map, cfg)
         clim_a = climate_penalty_elo(a, climate, confed_map, cfg)
-        travel = fixture_travel.get(m["m"], {})
+        # H2: forecast supersedes climate prior. If we have a non-fallback
+        # weather entry for this team-match, zero the static climate term —
+        # the live weather layer (heat_pp etc.) will reapply the *current*
+        # acclimatisation cost. Without this, hot-venue UEFA teams would
+        # take the static −15 AND the live weather penalty on top of it.
+        if (m_id, h) in forecast_weather_keys:
+            clim_h = 0.0
+        if (m_id, a) in forecast_weather_keys:
+            clim_a = 0.0
+        travel = fixture_travel.get(m_id, {})
         trav_h = travel.get("home_penalty", 0.0)
         trav_a = travel.get("away_penalty", 0.0)
-        e_h_bonus = host_b_h + alt_h + clim_h + trav_h
-        e_a_bonus = host_b_a + alt_a + clim_a + trav_a
+
+        # C2: match-scoped matchday intel (weather, lineups for this fixture).
+        # The function returns tournament-wide + match-scoped; subtract the
+        # already-baked-in tournament-wide component to get the delta.
+        match_total_h = float(_matchday_intel(h, m_id))
+        match_total_a = float(_matchday_intel(a, m_id))
+        match_scoped_h = match_total_h - tournament_wide_intel.get(h, 0.0)
+        match_scoped_a = match_total_a - tournament_wide_intel.get(a, 0.0)
+        # C3: respect GRAND_TOTAL_CAP for the per-match total (live + intel).
+        raw_combined_h = live_state_by_team.get(h, 0.0) + match_total_h
+        raw_combined_a = live_state_by_team.get(a, 0.0) + match_total_a
+        capped_combined_h = max(-GRAND_TOTAL_CAP_ELO, min(GRAND_TOTAL_CAP_ELO, raw_combined_h))
+        capped_combined_a = max(-GRAND_TOTAL_CAP_ELO, min(GRAND_TOTAL_CAP_ELO, raw_combined_a))
+        # The bonus added on top of elo_eff_base (which already includes
+        # base_intel_plus_state for the team) is the difference between the
+        # per-match capped combined and the precomputed base.
+        intel_match_bonus_h = capped_combined_h - base_intel_plus_state.get(h, 0.0)
+        intel_match_bonus_a = capped_combined_a - base_intel_plus_state.get(a, 0.0)
+
+        e_h_bonus = host_b_h + alt_h + clim_h + trav_h + intel_match_bonus_h
+        e_a_bonus = host_b_a + alt_a + clim_a + trav_a + intel_match_bonus_a
+
+        per_match_intel_meta.append({
+            "match_id": m_id,
+            "home_match_total_intel": round(match_total_h, 3),
+            "away_match_total_intel": round(match_total_a, 3),
+            "home_match_scoped_delta": round(match_scoped_h, 3),
+            "away_match_scoped_delta": round(match_scoped_a, 3),
+            "home_intel_bonus_applied": round(intel_match_bonus_h, 3),
+            "away_intel_bonus_applied": round(intel_match_bonus_a, 3),
+            "home_grand_cap_hit": abs(raw_combined_h - capped_combined_h) > 1e-6,
+            "away_grand_cap_hit": abs(raw_combined_a - capped_combined_a) > 1e-6,
+            "climate_static_h_zeroed_by_forecast": (m_id, h) in forecast_weather_keys,
+            "climate_static_a_zeroed_by_forecast": (m_id, a) in forecast_weather_keys,
+        })
+
         is_neutral = (venue_country != h)
         lam_h, lam_a = predict_lambdas(
             h, a, home_model, away_model, feature_cols,
@@ -660,6 +788,7 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
             "m": m["m"], "date": m["date"], "time": m["time"], "group": m["group"],
             "home": h, "away": a, "venue": venue, "venue_country": venue_country,
             "altitude_m": altitude, "climate": climate,
+            "stage": "group",
             "lam_home": lam_h, "lam_away": lam_a,
             "p_home_win": p_home, "p_draw": p_draw, "p_away_win": p_away,
             "elo_home": float(elo.get(h, 1500)), "elo_away": float(elo.get(a, 1500)),
@@ -675,12 +804,89 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
             "locked_score": completed_matches.get(m["m"]),
         })
 
-    # Knockout matrices for every team pair (neutral)
-    knock_matrices = {}
-    knock_lambdas = {}
+    # P1-D: knockout fixtures export. Pre-resolution we don't know the actual
+    # teams in each slot (e.g. "1A vs 3A/B/C/D/F"), so we can't give a per-
+    # fixture probability distribution — but the dashboard needs to render
+    # the bracket with venue + date so the Matches view doesn't go dark on
+    # 28 Jun. Once fetch_results locks an FT/AET/PEN knockout, the
+    # `locked_score` field carries through and the card displays the real
+    # outcome. Venue metadata is included so the existing tag chips (hot,
+    # altitude, travel) still light up for knockout cards.
+    def _venue_meta(venue_str: str) -> tuple[str, dict]:
+        """Resolve a bracket `venue` string to (city_name, host_city_meta)."""
+        city = venue_city_map.get(venue_str, venue_str.split(",")[0].strip())
+        return city, host_city_meta.get(city, {})
+
+    knockout_predictions: list[dict] = []
+    STAGE_LABELS = {
+        "r32_slots":   "r32",
+        "r16_bracket": "r16",
+        "qf_bracket":  "qf",
+        "sf_bracket":  "sf",
+    }
+    for key, stage_tag in STAGE_LABELS.items():
+        for slot in bracket.get(key, []):
+            m_num = slot.get("match_num")
+            venue = slot.get("venue") or ""
+            city, city_meta = _venue_meta(venue)
+            locked = completed_matches.get(m_num) if m_num is not None else None
+            knockout_predictions.append({
+                "m": m_num,
+                "stage": stage_tag,
+                "date": slot.get("date", ""),
+                "time": slot.get("time", ""),
+                "group": stage_tag.upper(),
+                "venue": venue,
+                "venue_country": city_meta.get("country"),
+                "altitude_m": city_meta.get("altitude_m", 0),
+                "climate": city_meta.get("climate", ""),
+                # Slot codes (e.g. "1A", "3A/B/C/D/F") — show as placeholder
+                # team names until a locked_score arrives with the actual teams.
+                "slot_a": slot.get("slot_a"),
+                "slot_b": slot.get("slot_b"),
+                "home": (locked or {}).get("home") or slot.get("slot_a") or "TBD",
+                "away": (locked or {}).get("away") or slot.get("slot_b") or "TBD",
+                "locked_score": locked,
+            })
+    # Final + third place sit in a different sub-tree.
+    ft_block = bracket.get("final_and_third_place", {}) or {}
+    for tag, key in (("3rd", "third_place"), ("final", "final")):
+        slot = ft_block.get(key)
+        if not slot:
+            continue
+        m_num = slot.get("match_num")
+        venue = slot.get("venue") or ""
+        city, city_meta = _venue_meta(venue)
+        locked = completed_matches.get(m_num) if m_num is not None else None
+        knockout_predictions.append({
+            "m": m_num,
+            "stage": tag,
+            "date": slot.get("date", ""),
+            "time": slot.get("time", ""),
+            "group": tag.upper(),
+            "venue": venue,
+            "venue_country": city_meta.get("country"),
+            "altitude_m": city_meta.get("altitude_m", 0),
+            "climate": city_meta.get("climate", ""),
+            "slot_a": slot.get("slot_a"),
+            "slot_b": slot.get("slot_b"),
+            "home": (locked or {}).get("home") or slot.get("slot_a") or "TBD",
+            "away": (locked or {}).get("away") or slot.get("slot_b") or "TBD",
+            "locked_score": locked,
+        })
+
+    # Knockout matrices for every team pair (neutral).
+    # H4: symmetrize so P(A beats B | slot order (A,B)) equals
+    # P(A beats B | slot order (B,A)). Residual home-side bias in the
+    # goal model would otherwise leak into whichever team happens to be
+    # the bracket's "slot A". We compute the raw model output for every
+    # directed pair first, then average each pair with its transpose.
+    raw_lams: dict[tuple[str, str], tuple[float, float]] = {}
+    raw_mats: dict[tuple[str, str], np.ndarray] = {}
     for h in all_teams:
         for a in all_teams:
-            if h == a: continue
+            if h == a:
+                continue
             e_h = elo_eff_base[h]; e_a = elo_eff_base[a]
             host_b_h = cfg["host_boost_away"] if h in HOST_COUNTRIES else 0.0
             host_b_a = cfg["host_boost_away"] if a in HOST_COUNTRIES else 0.0
@@ -690,8 +896,34 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
                 home_elo_bonus=host_b_h, away_elo_bonus=host_b_a,
                 is_neutral=True, importance=1.0)
             mat = build_score_matrix(lam_h, lam_a, cfg, use_dispersion=cfg["use_dispersion"])
-            knock_matrices[(h, a)] = mat
-            knock_lambdas[(h, a)] = (lam_h, lam_a, e_h + host_b_h, e_a + host_b_a)
+            raw_lams[(h, a)] = (lam_h, lam_a, e_h + host_b_h, e_a + host_b_a)
+            raw_mats[(h, a)] = mat
+
+    knock_matrices = {}
+    knock_lambdas = {}
+    for h in all_teams:
+        for a in all_teams:
+            if h == a:
+                continue
+            mat_ha = raw_mats[(h, a)]
+            mat_ah = raw_mats[(a, h)]
+            # Symmetrize: average P[(h_score, a_score) | (h,a)] with
+            # P[(a_score, h_score) | (a,h)] swapped via transpose. This
+            # equalises directed-pair outcomes without changing the joint
+            # score-distribution shape.
+            mat_sym = 0.5 * (mat_ha + mat_ah.T)
+            mat_sym = np.maximum(mat_sym, 1e-12)
+            mat_sym /= mat_sym.sum()
+            lam_h_ha, lam_a_ha, eff_h_ha, eff_a_ha = raw_lams[(h, a)]
+            lam_h_ah, lam_a_ah, eff_h_ah, eff_a_ah = raw_lams[(a, h)]
+            # Symmetric lambdas: average h's two views (as slot-A and slot-B)
+            # of the same matchup. Same for a.
+            lam_h_sym = 0.5 * (lam_h_ha + lam_a_ah)
+            lam_a_sym = 0.5 * (lam_a_ha + lam_h_ah)
+            eff_h_sym = 0.5 * (eff_h_ha + eff_a_ah)
+            eff_a_sym = 0.5 * (eff_a_ha + eff_h_ah)
+            knock_matrices[(h, a)] = mat_sym
+            knock_lambdas[(h, a)] = (lam_h_sym, lam_a_sym, eff_h_sym, eff_a_sym)
 
     slot_pools = {
         "M74": set("ABCDF"), "M77": set("CDFGH"), "M79": set("CEFHI"),
@@ -709,6 +941,15 @@ def precompute_context(cfg_data, bracket, annex_c, squad_vals, elo, home_model, 
         # get locked via group_matrices[i]["locked_score"] at line ~599;
         # knockouts are looked up by match_num inside run_single_seed.
         "completed_matches": completed_matches,
+        # C3: per-team report of any clamp at GRAND_TOTAL_CAP.
+        "grand_cap_applied": grand_cap_applied,
+        # C2 audit: per-match intel bonus values (for dashboard inspection).
+        "per_match_intel_meta": per_match_intel_meta,
+        # P1-D: knockout fixture metadata (32 fixtures: 16 R32 + 8 R16 + 4 QF
+        # + 2 SF + 3rd + final). Pre-resolution slots carry placeholder
+        # labels (e.g. "1A", "W101"); locked results promote them to real
+        # team names.
+        "knockout_predictions": knockout_predictions,
     }
 
 
@@ -811,6 +1052,34 @@ def main():
                              completed_matches=completed_matches,
                              live_team_state=live_team_state)
 
+    # H1: stamp a stable hash of the inputs that drive the live simulation.
+    # run_live_update reads this from the previous predictions_live.json to
+    # decide whether to re-simulate. Live mode only — baseline runs don't
+    # need it.
+    if cfg["live_mode"]:
+        _h = hashlib.sha256()
+        try:
+            res_p = ROOT / "data" / "live" / "results_2026.json"
+            if res_p.exists():
+                res = json.loads(res_p.read_text())
+                cm = sorted(res.get("completed_matches", []), key=lambda r: r.get("m", 0))
+                _h.update(json.dumps(cm, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            mi_p = ROOT / "dashboard" / "matchday_intelligence.json"
+            if mi_p.exists():
+                mi = json.loads(mi_p.read_text())
+                _h.update(str(mi.get("generated_at", "")).encode("utf-8"))
+                _h.update(str(len(mi.get("adjustments") or [])).encode("utf-8"))
+            lts_p = ROOT / "data" / "live" / "live_team_state.json"
+            if lts_p.exists():
+                lts = json.loads(lts_p.read_text())
+                _h.update(str(lts.get("last_updated", "")).encode("utf-8"))
+                _h.update(json.dumps(lts.get("deltas", {}) or {},
+                                     sort_keys=True, separators=(",", ":")).encode("utf-8"))
+            ctx["input_hash"] = _h.hexdigest()[:16]
+        except Exception as _e:
+            print(f"[03_simulate] could not compute input_hash: {_e}")
+            ctx["input_hash"] = ""
+
     print(f"[3/5] Running {n_seeds} seeds × {n_sims:,} sims…")
     all_teams = ctx["all_teams"]
     runs = []
@@ -854,6 +1123,11 @@ def main():
     for m in match_predictions:
         # numpy → python
         m["lam_home"] = float(m["lam_home"]); m["lam_away"] = float(m["lam_away"])
+    # P1-D: append knockout placeholders so the dashboard's Matches view
+    # has fixtures to render from 28 Jun onwards. These carry no per-team
+    # probabilities pre-resolution; the dashboard already null-guards
+    # those fields and falls back to slot labels for the team strings.
+    match_predictions.extend(ctx.get("knockout_predictions", []))
 
     annex_c_misses = sum(r["annex_c_misses"] for r in runs)
     print(f"      Annex C misses across all sims: {annex_c_misses}")
@@ -913,6 +1187,25 @@ def main():
     out["injury_adjustments_active"] = injury_adjustments
     out["live_team_state_deltas"] = live_team_state
     out["completed_matches"] = list(completed_matches.keys())
+    # H1: stamp the inputs hash so run_live_update can detect actual changes
+    # (results, intel, team-state) rather than just the locked-match count.
+    out["input_hash"] = ctx.get("input_hash", "")
+    # C3: per-team grand-total-cap audit so the dashboard can badge any team
+    # whose live form + matchday intel was clamped to ±45.
+    out["grand_cap_applied"] = ctx.get("grand_cap_applied", {})
+    # P2: per-fixture intel audit trail (which group match got how much
+    # weather/lineup delta, whether the grand cap clamped that fixture).
+    # Trimmed to non-zero entries to keep payload size honest — most
+    # fixtures will have nothing live to report pre-tournament.
+    _meta_all = ctx.get("per_match_intel_meta", []) or []
+    out["per_match_intel_meta"] = [
+        x for x in _meta_all
+        if abs(x.get("home_intel_bonus_applied", 0.0)) > 1e-6
+        or abs(x.get("away_intel_bonus_applied", 0.0)) > 1e-6
+        or x.get("home_grand_cap_hit") or x.get("away_grand_cap_hit")
+        or x.get("climate_static_h_zeroed_by_forecast")
+        or x.get("climate_static_a_zeroed_by_forecast")
+    ]
     (PROC / args.out).write_text(json.dumps(out, indent=2, default=str))
     print(f"[OK] Wrote {PROC / args.out}")
 

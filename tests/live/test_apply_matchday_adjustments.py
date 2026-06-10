@@ -370,6 +370,51 @@ class TestAuditLog(unittest.TestCase):
             self.assertIn("active_adjustments", data)
 
 
+class TestStatsProxyDownweight(unittest.TestCase):
+    """H7: stats_proxy is halved for teams that already have a live_team_state
+    delta — both layers encode post-match form, so stacking them at full
+    weight double-counts."""
+
+    def test_no_live_state_full_weight(self):
+        feeds = {"match_stats_2026.json": {"matches": [{
+            "match_id": 5, "status": "FT",
+            "home": "France", "away": "Argentina",
+            "home_form_adjustment_elo": 6.0,
+            "away_form_adjustment_elo": -4.0,
+            "true_xg_available": False,
+        }]}}
+        with _TempFeeds(feeds):
+            # Both queries inside the context; reload=True on first to force
+            # the state cache to read the patched LIVE path.
+            fr = amd.get_team_elo_adjustment("France", reload=True)
+            ar = amd.get_team_elo_adjustment("Argentina")
+        # No live_team_state.json present → both teams get full weight.
+        self.assertAlmostEqual(fr, 6.0, places=2)
+        self.assertAlmostEqual(ar, -4.0, places=2)
+
+    def test_live_state_halves_proxy(self):
+        feeds = {
+            "match_stats_2026.json": {"matches": [{
+                "match_id": 5, "status": "FT",
+                "home": "France", "away": "Argentina",
+                "home_form_adjustment_elo": 6.0,
+                "away_form_adjustment_elo": -4.0,
+                "true_xg_available": False,
+            }]},
+            "live_team_state.json": {
+                "last_updated": "2026-06-12T00:00:00Z",
+                # Schema written by update_team_state.py uses "deltas".
+                "deltas": {"France": 5.0},
+            },
+        }
+        with _TempFeeds(feeds):
+            fr = amd.get_team_elo_adjustment("France", reload=True)
+            ar = amd.get_team_elo_adjustment("Argentina")
+        # France halved (6.0 → 3.0); Argentina untouched (no live state).
+        self.assertAlmostEqual(fr, 3.0, places=2)
+        self.assertAlmostEqual(ar, -4.0, places=2)
+
+
 def _summary(result):
     print()
     print(f"  Ran {result.testsRun} tests")
