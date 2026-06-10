@@ -211,10 +211,17 @@ function applyLiveUpdate({ liveState, liveDelta, livePred }) {
 
   renderLastUpdated(activeData(), liveState);
   renderLiveStatusBar(liveState);
-  renderHero(activeData(), liveState, liveDelta);
-  renderStatsStrip(activeData(), cal);
+  // On live ticks the hero/stats numbers must NOT re-animate from 0 — that
+  // visually screams "data was cleared" and distracts mid-match. Pass
+  // { animate: false } so renderHero / renderStatsStrip set textContent
+  // directly to the final formatted value.
+  renderHero(activeData(), liveState, liveDelta, { animate: false });
+  renderStatsStrip(activeData(), cal, { animate: false });
   renderStorylines(activeData(), travel);
   renderMovers(data, liveState, liveDelta);
+  // Contenders / matches / compare are init/paint-split shims (below) — on
+  // first call they initialize (bind listeners, populate dropdowns once);
+  // on subsequent calls they only paint from module-scope state.
   renderContenders(activeData(), liveDelta, travel);
   renderGroups(activeData());
   renderInteresting(activeData());
@@ -231,6 +238,34 @@ function applyLiveUpdate({ liveState, liveDelta, livePred }) {
 
 let _livePollTimer = null;
 let _lastLiveTimestamp = null;
+
+// ---- INIT/PAINT SPLIT STATE ----
+// Renderers below (renderContenders / renderMatches / renderCompare) are called
+// both at boot AND on every live tick by applyLiveUpdate. Their first call
+// attaches event listeners, builds dropdown options, and binds deep-link
+// helpers. Subsequent calls must NOT re-attach listeners or re-populate
+// option lists — that's a listener-stacking / dropdown-doubling bug. The
+// init flag + module-scope state below let the shim functions route to a
+// pure paint after the first call. State is module-scope so it survives
+// repaints (user sort, drawer expansion, filter chips, compare selections
+// must all persist across live ticks).
+let _contendersInitialized = false;
+let _contendersState = {
+  sortKey: 'p_champion',
+  sortDir: 'desc',
+  expanded: new Set(),
+  showAll: false,
+};
+let _matchesInitialized = false;
+let _matchesState = {
+  view: 'featured',
+  chip: 'all',
+};
+let _compareInitialized = false;
+let _compareState = {
+  aValue: null,
+  bValue: null,
+};
 
 function startLivePolling(intervalMs = 60_000) {
   // Seed last-seen ts from whatever was loaded at boot.
@@ -304,10 +339,14 @@ function renderLiveStatusBar(liveState) {
   `;
 }
 
-function renderHero(data, liveState, liveDelta) {
+function renderHero(data, liveState, liveDelta, opts = {}) {
+  const animate = opts.animate !== false;
   const top = data.team_predictions[0];
   document.getElementById('champ-team').innerHTML = `${confedDotHtml(top.team)}${escapeHtml(top.team)}`;
-  countUp(document.getElementById('champ-prob'), +(top.p_champion * 100).toFixed(1), '%');
+  const champVal = +(top.p_champion * 100).toFixed(1);
+  const champEl = document.getElementById('champ-prob');
+  if (animate) countUp(champEl, champVal, '%');
+  else champEl.textContent = `${champVal}%`;
   document.getElementById('champ-ci').textContent =
     top.p_champion_p05 != null
       ? `Simulation range: ${fmt(top.p_champion_p05)} – ${fmt(top.p_champion_p95)}`
@@ -333,9 +372,12 @@ function darkHorse(data) {
   return data.team_predictions.filter(t => !top8.has(t.team)).sort((a,b) => b.p_reach_sf - a.p_reach_sf)[0];
 }
 
-function renderStatsStrip(data, cal) {
+function renderStatsStrip(data, cal, opts = {}) {
+  const animate = opts.animate !== false;
   const total = data.n_simulations_total || data.n_simulations || 0;
-  countUp(document.getElementById('stat-sims'), total);
+  const simsEl = document.getElementById('stat-sims');
+  if (animate) countUp(simsEl, total);
+  else simsEl.textContent = total >= 100 ? Math.round(total).toLocaleString() : total.toFixed(1);
   document.getElementById('stat-sims-sub').textContent =
     `${data.n_seeds || 1} seeds × ${(data.n_simulations_per_seed || total).toLocaleString()}`;
 
@@ -475,7 +517,119 @@ function renderMovers(data, liveState, liveDelta) {
 }
 
 // ---- CONTENDERS ----
+//
+// Init/paint split (see _contendersInitialized / _contendersState at module
+// scope). `initContenders` runs ONCE on the first call to renderContenders:
+// it populates the group dropdown, binds every event listener (header sort,
+// drawer click, search input, group/region change, reset, toggle-all,
+// deep-link helpers), and triggers the first paint. `paintContenders` is the
+// pure paint that runs on every subsequent call (live tick) — it reads from
+// activeData() and module-scope state, never touches dropdowns or rebinds
+// listeners. `renderContenders` is the thin shim that routes between them.
 function renderContenders(data, liveDelta, travel) {
+  if (!_contendersInitialized) initContenders(data, liveDelta, travel);
+  else paintContenders();
+}
+
+function initContenders(data, liveDelta, travel) {
+  const tbody = document.querySelector('#contenders-table tbody');
+  const groupSel = document.getElementById('team-group');
+  const regionSel = document.getElementById('team-region');
+  const searchEl = document.getElementById('team-search');
+  const resetBtn = document.getElementById('contenders-reset');
+  const headerCells = document.querySelectorAll('#contenders-table thead th[data-sort]');
+  const btn = document.getElementById('toggle-all-teams');
+
+  // Populate the group dropdown ONCE. The 12 World Cup groups are fixed and
+  // can't change mid-tournament, so appending on every live tick would just
+  // duplicate options.
+  const groups = [...new Set(data.team_predictions.map(t => t.group))].sort();
+  groups.forEach(g => {
+    const o = document.createElement('option'); o.value = g; o.textContent = `Group ${g}`;
+    if (groupSel) groupSel.appendChild(o);
+  });
+
+  // Event listeners — bound ONCE. They read state from module scope
+  // (_contendersState) and call paintContenders(), so user actions survive
+  // live ticks.
+  tbody.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('[data-copy]');
+    if (copyBtn) {
+      const path = copyBtn.dataset.copy;
+      const url = window.location.origin + window.location.pathname + path;
+      navigator.clipboard?.writeText(url).then(() => {
+        const old = copyBtn.textContent; copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = old; }, 1500);
+      });
+      return;
+    }
+    const tr = e.target.closest('tr.team-row');
+    if (!tr || !tr.classList.contains('is-expandable')) return;
+    const team = tr.dataset.team;
+    const expanded = _contendersState.expanded;
+    if (expanded.has(team)) expanded.delete(team); else expanded.add(team);
+    paintContenders();
+  });
+
+  headerCells.forEach(th => {
+    th.style.cursor = 'pointer';
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (_contendersState.sortKey === key) {
+        _contendersState.sortDir = _contendersState.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _contendersState.sortKey = key;
+        _contendersState.sortDir = th.dataset.sortDefault || (['team', 'group', 'rank'].includes(key) ? 'asc' : 'desc');
+      }
+      paintContenders();
+    });
+  });
+
+  if (btn) btn.addEventListener('click', () => {
+    _contendersState.showAll = !_contendersState.showAll;
+    paintContenders();
+  });
+  searchEl?.addEventListener('input', () => paintContenders());
+  groupSel?.addEventListener('change', () => paintContenders());
+  regionSel?.addEventListener('change', () => paintContenders());
+  resetBtn?.addEventListener('click', () => {
+    if (searchEl) searchEl.value = '';
+    if (groupSel) groupSel.value = 'all';
+    if (regionSel) regionSel.value = 'all';
+    _contendersState.sortKey = 'p_champion';
+    _contendersState.sortDir = 'desc';
+    paintContenders();
+  });
+
+  // Expose for deep link. Defined ONCE inside init so live ticks don't
+  // reassign them (they would still work, but the reassignment is wasted
+  // work and previously rebuilt closures over stale state).
+  window._openContenderDrawer = (team) => {
+    const all = activeData().team_predictions;
+    if (!all.some(t => t.team === team)) return false;
+    _contendersState.expanded.add(team);
+    if (searchEl) searchEl.value = '';
+    if (groupSel) groupSel.value = 'all';
+    if (regionSel) regionSel.value = 'all';
+    _contendersState.sortKey = 'p_champion';
+    _contendersState.sortDir = 'desc';
+    _contendersState.showAll = true;
+    paintContenders();
+    return true;
+  };
+  window._setGroupFilter = (g) => {
+    if (groupSel) groupSel.value = g;
+    paintContenders();
+  };
+
+  _contendersInitialized = true;
+  paintContenders();
+}
+
+function paintContenders() {
+  const data = activeData();
+  const liveDelta = window._liveDelta;
+  const travel = window._travel;
   const tbody = document.querySelector('#contenders-table tbody');
   const all = data.team_predictions;
   const maxP = all[0].p_champion;
@@ -483,13 +637,8 @@ function renderContenders(data, liveDelta, travel) {
   const groupSel = document.getElementById('team-group');
   const regionSel = document.getElementById('team-region');
   const searchEl = document.getElementById('team-search');
-  const resetBtn = document.getElementById('contenders-reset');
   const headerCells = document.querySelectorAll('#contenders-table thead th[data-sort]');
-
-  [...new Set(all.map(t => t.group))].sort().forEach(g => {
-    const o = document.createElement('option'); o.value = g; o.textContent = `Group ${g}`;
-    if (groupSel) groupSel.appendChild(o);
-  });
+  const btn = document.getElementById('toggle-all-teams');
 
   const deltaMap = {};
   if (liveDelta?.all_movers) liveDelta.all_movers.forEach(m => deltaMap[m.team] = m.delta_pp);
@@ -497,9 +646,7 @@ function renderContenders(data, liveDelta, travel) {
   const travelDelta = {};
   (travel?.all_diffs || []).forEach(d => travelDelta[d.team] = d.delta_pp);
 
-  const expanded = new Set();
-  let sortKey = 'p_champion';
-  let sortDir = 'desc';
+  const { sortKey, sortDir, expanded, showAll } = _contendersState;
 
   function sortFn(a, b) {
     if (sortKey === 'rank') return all.indexOf(a) - all.indexOf(b);
@@ -603,115 +750,42 @@ function renderContenders(data, liveDelta, travel) {
     </td></tr>`;
   }
 
-  let showAll = false;
-  const btn = document.getElementById('toggle-all-teams');
-
-  function paint() {
-    const q = (searchEl?.value || '').trim().toLowerCase();
-    const g = (groupSel?.value || 'all');
-    const r = (regionSel?.value || 'all');
-    let filtered = all.filter(t => {
-      if (q && !t.team.toLowerCase().includes(q)) return false;
-      if (g !== 'all' && t.group !== g) return false;
-      if (r !== 'all' && (CONFED[t.team] || 'Other') !== r) return false;
-      return true;
-    });
-
-    filtered = filtered.slice().sort(sortFn);
-
-    const filterActive = q || g !== 'all' || r !== 'all';
-    if (!filterActive && !showAll) filtered = filtered.slice(0, 20);
-
-    if (countEl) countEl.textContent = `${filtered.length} of ${all.length}`;
-
-    if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><strong>No teams match.</strong> Try clearing the search or filters.</div></td></tr>`;
-      return;
-    }
-
-    const topVisible = new Set(filtered.slice(0, 10).map(t => t.team));
-    const rows = [];
-    filtered.forEach((t, i) => {
-      const opensDrawer = topVisible.has(t.team);
-      rows.push(rowHtml(t, i, opensDrawer));
-      if (opensDrawer && expanded.has(t.team)) rows.push(drawerHtml(t));
-    });
-    tbody.innerHTML = rows.join('');
-
-    if (btn) btn.textContent = (showAll || filterActive) ? `Show top 20` : `Show all ${all.length}`;
-    paintHeaderSort();
-  }
-
-  function paintHeaderSort() {
-    headerCells.forEach(th => {
-      th.classList.remove('sort-asc', 'sort-desc');
-      if (th.dataset.sort === sortKey) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
-    });
-  }
-
-  tbody.addEventListener('click', (e) => {
-    // Drawer action handlers
-    const copyBtn = e.target.closest('[data-copy]');
-    if (copyBtn) {
-      const path = copyBtn.dataset.copy;
-      const url = window.location.origin + window.location.pathname + path;
-      navigator.clipboard?.writeText(url).then(() => {
-        const old = copyBtn.textContent; copyBtn.textContent = 'Copied!';
-        setTimeout(() => { copyBtn.textContent = old; }, 1500);
-      });
-      return;
-    }
-    const tr = e.target.closest('tr.team-row');
-    if (!tr || !tr.classList.contains('is-expandable')) return;
-    const team = tr.dataset.team;
-    if (expanded.has(team)) expanded.delete(team); else expanded.add(team);
-    paint();
-  });
-
-  headerCells.forEach(th => {
-    th.style.cursor = 'pointer';
-    th.addEventListener('click', () => {
-      const key = th.dataset.sort;
-      if (sortKey === key) {
-        sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-      } else {
-        sortKey = key;
-        sortDir = th.dataset.sortDefault || (['team', 'group', 'rank'].includes(key) ? 'asc' : 'desc');
-      }
-      paint();
-    });
-  });
-
-  if (btn) btn.addEventListener('click', () => { showAll = !showAll; paint(); });
-  searchEl?.addEventListener('input', () => paint());
-  groupSel?.addEventListener('change', () => paint());
-  regionSel?.addEventListener('change', () => paint());
-  resetBtn?.addEventListener('click', () => {
-    if (searchEl) searchEl.value = '';
-    if (groupSel) groupSel.value = 'all';
-    if (regionSel) regionSel.value = 'all';
-    sortKey = 'p_champion'; sortDir = 'desc';
-    paint();
-  });
-
-  // Expose for deep link
-  window._openContenderDrawer = (team) => {
-    if (!all.some(t => t.team === team)) return false;
-    expanded.add(team);
-    if (searchEl) searchEl.value = '';
-    if (groupSel) groupSel.value = 'all';
-    if (regionSel) regionSel.value = 'all';
-    sortKey = 'p_champion'; sortDir = 'desc';
-    showAll = true;
-    paint();
+  const q = (searchEl?.value || '').trim().toLowerCase();
+  const g = (groupSel?.value || 'all');
+  const r = (regionSel?.value || 'all');
+  let filtered = all.filter(t => {
+    if (q && !t.team.toLowerCase().includes(q)) return false;
+    if (g !== 'all' && t.group !== g) return false;
+    if (r !== 'all' && (CONFED[t.team] || 'Other') !== r) return false;
     return true;
-  };
-  window._setGroupFilter = (g) => {
-    if (groupSel) groupSel.value = g;
-    paint();
-  };
+  });
 
-  paint();
+  filtered = filtered.slice().sort(sortFn);
+
+  const filterActive = q || g !== 'all' || r !== 'all';
+  if (!filterActive && !showAll) filtered = filtered.slice(0, 20);
+
+  if (countEl) countEl.textContent = `${filtered.length} of ${all.length}`;
+
+  if (!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><strong>No teams match.</strong> Try clearing the search or filters.</div></td></tr>`;
+    return;
+  }
+
+  const topVisible = new Set(filtered.slice(0, 10).map(t => t.team));
+  const rows = [];
+  filtered.forEach((t, i) => {
+    const opensDrawer = topVisible.has(t.team);
+    rows.push(rowHtml(t, i, opensDrawer));
+    if (opensDrawer && expanded.has(t.team)) rows.push(drawerHtml(t));
+  });
+  tbody.innerHTML = rows.join('');
+
+  if (btn) btn.textContent = (showAll || filterActive) ? `Show top 20` : `Show all ${all.length}`;
+  headerCells.forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.sort === sortKey) th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
 }
 
 function renderGroups(data) {
@@ -812,18 +886,31 @@ function renderInteresting(data) {
 }
 
 // ---- MATCHES ----
+//
+// Init/paint split (see _matchesInitialized / _matchesState at module scope).
+// The group / date / venue dropdowns and the 72-match roster do NOT change
+// mid-tournament (the bracket is fixed at draw), so we populate dropdowns
+// ONCE in initMatches and never clear/repopulate in paintMatches. The
+// view (featured/all) and chip (venue/climate filter) are persisted in
+// module state so user choices survive live ticks.
 function renderMatches(data, liveState) {
-  const list = document.getElementById('matches-list');
+  if (!_matchesInitialized) initMatches(data, liveState);
+  else paintMatches();
+}
+
+function initMatches(data, liveState) {
   const groupSel = document.getElementById('f-group');
   const dateSel = document.getElementById('f-date');
   const venueSel = document.getElementById('f-venue');
   const searchEl = document.getElementById('match-search');
   const closeOnly = document.getElementById('f-close-only');
   const resetBtn = document.getElementById('matches-reset');
-  const countEl = document.getElementById('filter-count');
   const toggleButtons = document.querySelectorAll('.match-view-toggle button');
   const chips = document.querySelectorAll('#venue-chips .chip');
 
+  // Populate group / date / venue dropdowns ONCE. We still strip any existing
+  // non-default options as a belt-and-braces defence against earlier code
+  // paths that may have appended.
   while (groupSel.options.length > 1) groupSel.remove(1);
   while (dateSel.options.length > 1) dateSel.remove(1);
   while (venueSel.options.length > 1) venueSel.remove(1);
@@ -837,8 +924,64 @@ function renderMatches(data, liveState) {
     const o = document.createElement('option'); o.value = v; o.textContent = v; venueSel.appendChild(o);
   });
 
-  let view = 'featured';
-  let chip = 'all';
+  toggleButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      btn.classList.add('active'); btn.setAttribute('aria-selected', 'true');
+      _matchesState.view = btn.dataset.view;
+      paintMatches();
+    });
+  });
+
+  chips.forEach(c => {
+    c.addEventListener('click', () => {
+      chips.forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+      _matchesState.chip = c.dataset.chip;
+      paintMatches();
+    });
+  });
+
+  groupSel.addEventListener('change', paintMatches);
+  dateSel.addEventListener('change', paintMatches);
+  venueSel.addEventListener('change', paintMatches);
+  searchEl?.addEventListener('input', paintMatches);
+  closeOnly?.addEventListener('change', paintMatches);
+  resetBtn?.addEventListener('click', () => {
+    if (searchEl) searchEl.value = '';
+    groupSel.value = 'all'; dateSel.value = 'all'; venueSel.value = 'all';
+    if (closeOnly) closeOnly.checked = false;
+    _matchesState.chip = 'all';
+    chips.forEach(c => c.classList.toggle('active', c.dataset.chip === 'all'));
+    _matchesState.view = 'featured';
+    toggleButtons.forEach(b => { b.classList.toggle('active', b.dataset.view === 'featured'); b.setAttribute('aria-selected', b.dataset.view === 'featured' ? 'true' : 'false'); });
+    paintMatches();
+  });
+
+  // Expose for deep-link. Defined ONCE inside init.
+  window._setMatchGroup = (g) => {
+    groupSel.value = g;
+    _matchesState.chip = 'all';
+    chips.forEach(c => c.classList.toggle('active', c.dataset.chip === 'all'));
+    _matchesState.view = 'all';
+    toggleButtons.forEach(b => { b.classList.toggle('active', b.dataset.view === 'all'); b.setAttribute('aria-selected', b.dataset.view === 'all' ? 'true' : 'false'); });
+    paintMatches();
+  };
+
+  _matchesInitialized = true;
+  paintMatches();
+}
+
+function paintMatches() {
+  const data = activeData();
+  const list = document.getElementById('matches-list');
+  const groupSel = document.getElementById('f-group');
+  const dateSel = document.getElementById('f-date');
+  const venueSel = document.getElementById('f-venue');
+  const searchEl = document.getElementById('match-search');
+  const closeOnly = document.getElementById('f-close-only');
+  const countEl = document.getElementById('filter-count');
+  const { view, chip } = _matchesState;
 
   function featuredMatches() {
     const all = data.match_predictions.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -858,142 +1001,161 @@ function renderMatches(data, liveState) {
     return true;
   }
 
-  function paint() {
-    const q = (searchEl?.value || '').trim().toLowerCase();
-    const g = groupSel.value, d = dateSel.value, vn = venueSel.value;
-    const close = closeOnly?.checked;
-    const userFilterActive = q || g !== 'all' || d !== 'all' || vn !== 'all' || close || chip !== 'all';
+  const q = (searchEl?.value || '').trim().toLowerCase();
+  const g = groupSel.value, d = dateSel.value, vn = venueSel.value;
+  const close = closeOnly?.checked;
+  const userFilterActive = q || g !== 'all' || d !== 'all' || vn !== 'all' || close || chip !== 'all';
 
-    let pool = userFilterActive || view === 'all'
-      ? data.match_predictions : featuredMatches();
+  let pool = userFilterActive || view === 'all'
+    ? data.match_predictions : featuredMatches();
 
-    let filtered = pool.filter(m => {
-      if (g !== 'all' && m.group !== g) return false;
-      if (d !== 'all' && m.date !== d) return false;
-      if (vn !== 'all' && m.venue !== vn) return false;
-      if (!chipMatches(m)) return false;
-      if (q && !(m.home.toLowerCase().includes(q) || m.away.toLowerCase().includes(q) || m.venue.toLowerCase().includes(q))) return false;
-      if (close) {
-        const max = Math.max(m.p_home_win, m.p_draw, m.p_away_win);
-        if (max > 0.55) return false;
-      }
-      return true;
-    });
-
-    const total = view === 'all' || userFilterActive ? data.match_predictions.length : featuredMatches().length;
-    if (countEl) countEl.textContent = `${filtered.length} of ${total}`;
-
-    if (!filtered.length) {
-      list.innerHTML = `<div class="empty-state" style="grid-column: 1/-1"><strong>No matches found.</strong> Try clearing filters or switching to "All 72".</div>`;
-      return;
+  let filtered = pool.filter(m => {
+    if (g !== 'all' && m.group !== g) return false;
+    if (d !== 'all' && m.date !== d) return false;
+    if (vn !== 'all' && m.venue !== vn) return false;
+    if (!chipMatches(m)) return false;
+    if (q && !(m.home.toLowerCase().includes(q) || m.away.toLowerCase().includes(q) || m.venue.toLowerCase().includes(q))) return false;
+    if (close) {
+      const max = Math.max(m.p_home_win, m.p_draw, m.p_away_win);
+      if (max > 0.55) return false;
     }
+    return true;
+  });
 
-    list.innerHTML = filtered.map(m => {
-      const ph = (m.p_home_win * 100).toFixed(0);
-      const pd = (m.p_draw * 100).toFixed(0);
-      const pa = (m.p_away_win * 100).toFixed(0);
-      const winner = m.p_home_win > m.p_away_win
-        ? (m.p_home_win > m.p_draw ? m.home : 'Draw')
-        : (m.p_away_win > m.p_draw ? m.away : 'Draw');
-      const tags = [];
-      if (m.altitude_m > 1500) tags.push(`<span class="tag alt">⛰ ${m.altitude_m}m</span>`);
-      if ((m.climate || '').includes('very_hot')) tags.push('<span class="tag hot">very hot</span>');
-      else if ((m.climate || '').includes('hot')) tags.push('<span class="tag hot">hot</span>');
-      const travel = Math.max(m.home_travel_km || 0, m.away_travel_km || 0);
-      if (travel > 2500) tags.push(`<span class="tag travel">${(travel/1000).toFixed(1)}k km</span>`);
-      if (m.locked_score) tags.push(`<span class="tag locked">final ${escapeHtml(m.locked_score)}</span>`);
+  const total = view === 'all' || userFilterActive ? data.match_predictions.length : featuredMatches().length;
+  if (countEl) countEl.textContent = `${filtered.length} of ${total}`;
 
-      return `<div class="card match" id="match-${m.m}">
-        <div class="match-head">
-          <span class="pill">M${m.m} · Grp ${escapeHtml(m.group)}</span>
-          <span>${escapeHtml(m.date)} ${escapeHtml(m.time)} · ${escapeHtml(m.venue)}</span>
-        </div>
-        ${tags.length ? `<div class="venue-tags">${tags.join('')}</div>` : ''}
-        <div class="match-teams">
-          <div class="team-home">
-            <div class="team-name">${confedDotHtml(m.home)}${escapeHtml(m.home)}</div>
-            <span class="team-lambda">λ ${m.lam_home.toFixed(2)}</span>
-          </div>
-          <div class="vs">vs</div>
-          <div class="team-away">
-            <div class="team-name">${confedDotHtml(m.away)}${escapeHtml(m.away)}</div>
-            <span class="team-lambda">λ ${m.lam_away.toFixed(2)}</span>
-          </div>
-        </div>
-        <div class="prob-bar">
-          <div class="ph" style="width:${ph}%" title="${escapeHtml(m.home)} win">${ph}%</div>
-          <div class="pd" style="width:${pd}%" title="Draw">${pd}%</div>
-          <div class="pa" style="width:${pa}%" title="${escapeHtml(m.away)} win">${pa}%</div>
-        </div>
-        <div class="match-meta">
-          <span>Elo ${Math.round(m.elo_home)} vs ${Math.round(m.elo_away)}</span>
-          <span>Predicted: <strong>${escapeHtml(winner)}</strong></span>
-        </div>
-      </div>`;
-    }).join('');
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state" style="grid-column: 1/-1"><strong>No matches found.</strong> Try clearing filters or switching to "All 72".</div>`;
+    return;
   }
 
-  toggleButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      toggleButtons.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
-      btn.classList.add('active'); btn.setAttribute('aria-selected', 'true');
-      view = btn.dataset.view;
-      paint();
-    });
-  });
+  list.innerHTML = filtered.map(m => {
+    const ph = (m.p_home_win * 100).toFixed(0);
+    const pd = (m.p_draw * 100).toFixed(0);
+    const pa = (m.p_away_win * 100).toFixed(0);
+    const winner = m.p_home_win > m.p_away_win
+      ? (m.p_home_win > m.p_draw ? m.home : 'Draw')
+      : (m.p_away_win > m.p_draw ? m.away : 'Draw');
+    const tags = [];
+    if (m.altitude_m > 1500) tags.push(`<span class="tag alt">⛰ ${m.altitude_m}m</span>`);
+    if ((m.climate || '').includes('very_hot')) tags.push('<span class="tag hot">very hot</span>');
+    else if ((m.climate || '').includes('hot')) tags.push('<span class="tag hot">hot</span>');
+    const travel = Math.max(m.home_travel_km || 0, m.away_travel_km || 0);
+    if (travel > 2500) tags.push(`<span class="tag travel">${(travel/1000).toFixed(1)}k km</span>`);
+    if (m.locked_score) tags.push(`<span class="tag locked">final ${escapeHtml(m.locked_score)}</span>`);
 
-  chips.forEach(c => {
-    c.addEventListener('click', () => {
-      chips.forEach(x => x.classList.remove('active'));
-      c.classList.add('active');
-      chip = c.dataset.chip;
-      paint();
-    });
-  });
-
-  groupSel.addEventListener('change', paint);
-  dateSel.addEventListener('change', paint);
-  venueSel.addEventListener('change', paint);
-  searchEl?.addEventListener('input', paint);
-  closeOnly?.addEventListener('change', paint);
-  resetBtn?.addEventListener('click', () => {
-    if (searchEl) searchEl.value = '';
-    groupSel.value = 'all'; dateSel.value = 'all'; venueSel.value = 'all';
-    if (closeOnly) closeOnly.checked = false;
-    chip = 'all';
-    chips.forEach(c => c.classList.toggle('active', c.dataset.chip === 'all'));
-    view = 'featured';
-    toggleButtons.forEach(b => { b.classList.toggle('active', b.dataset.view === 'featured'); b.setAttribute('aria-selected', b.dataset.view === 'featured' ? 'true' : 'false'); });
-    paint();
-  });
-
-  // Expose for deep-link
-  window._setMatchGroup = (g) => { groupSel.value = g; chip = 'all'; chips.forEach(c => c.classList.toggle('active', c.dataset.chip === 'all')); view = 'all'; toggleButtons.forEach(b => { b.classList.toggle('active', b.dataset.view === 'all'); b.setAttribute('aria-selected', b.dataset.view === 'all' ? 'true' : 'false'); }); paint(); };
-
-  paint();
+    return `<div class="card match" id="match-${m.m}">
+      <div class="match-head">
+        <span class="pill">M${m.m} · Grp ${escapeHtml(m.group)}</span>
+        <span>${escapeHtml(m.date)} ${escapeHtml(m.time)} · ${escapeHtml(m.venue)}</span>
+      </div>
+      ${tags.length ? `<div class="venue-tags">${tags.join('')}</div>` : ''}
+      <div class="match-teams">
+        <div class="team-home">
+          <div class="team-name">${confedDotHtml(m.home)}${escapeHtml(m.home)}</div>
+          <span class="team-lambda">λ ${m.lam_home.toFixed(2)}</span>
+        </div>
+        <div class="vs">vs</div>
+        <div class="team-away">
+          <div class="team-name">${confedDotHtml(m.away)}${escapeHtml(m.away)}</div>
+          <span class="team-lambda">λ ${m.lam_away.toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="prob-bar">
+        <div class="ph" style="width:${ph}%" title="${escapeHtml(m.home)} win">${ph}%</div>
+        <div class="pd" style="width:${pd}%" title="Draw">${pd}%</div>
+        <div class="pa" style="width:${pa}%" title="${escapeHtml(m.away)} win">${pa}%</div>
+      </div>
+      <div class="match-meta">
+        <span>Elo ${Math.round(m.elo_home)} vs ${Math.round(m.elo_away)}</span>
+        <span>Predicted: <strong>${escapeHtml(winner)}</strong></span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ---- COMPARE TWO TEAMS ----
+//
+// Init/paint split (see _compareInitialized / _compareState at module scope).
+// The 48-team roster is fixed at the draw, so the two team dropdowns are
+// populated ONCE in initCompare and never touched again. CRITICAL: on live
+// ticks we read a.value / b.value from the DOM rather than resetting them,
+// so the user's chosen comparison survives. We only seed top-2 favourites
+// on first init.
 function renderCompare(data, travel) {
+  if (!_compareInitialized) initCompare(data, travel);
+  else paintCompare();
+}
+
+function initCompare(data, travel) {
   const a = document.getElementById('cmp-a');
   const b = document.getElementById('cmp-b');
   const grid = document.getElementById('compare-grid');
   const swap = document.getElementById('cmp-swap');
   if (!a || !b || !grid) return;
 
+  // Populate the two selects ONCE with the 48-team roster (alphabetized).
   const teams = data.team_predictions.slice().sort((x, y) => x.team.localeCompare(y.team));
   teams.forEach(t => {
     const o1 = document.createElement('option'); o1.value = t.team; o1.textContent = t.team; a.appendChild(o1);
     const o2 = document.createElement('option'); o2.value = t.team; o2.textContent = t.team; b.appendChild(o2);
   });
-  // Default to top-2 favourites
+  // Seed default to top-2 favourites on first init only. Subsequent live
+  // ticks must NOT reset these (paintCompare reads current DOM values).
   const sortedByChamp = data.team_predictions.slice().sort((x,y) => y.p_champion - x.p_champion);
   a.value = sortedByChamp[0]?.team || teams[0].team;
   b.value = sortedByChamp[1]?.team || teams[1].team;
+  _compareState.aValue = a.value;
+  _compareState.bValue = b.value;
+
+  a.addEventListener('change', () => {
+    _compareState.aValue = a.value;
+    paintCompare();
+  });
+  b.addEventListener('change', () => {
+    _compareState.bValue = b.value;
+    paintCompare();
+  });
+  swap?.addEventListener('click', () => {
+    const tmp = a.value; a.value = b.value; b.value = tmp;
+    _compareState.aValue = a.value;
+    _compareState.bValue = b.value;
+    paintCompare();
+  });
+
+  // Expose for deep-link. Defined ONCE inside init.
+  window._setCompare = (teamA, teamB) => {
+    const all = activeData().team_predictions;
+    if (teamA && all.some(t => t.team === teamA)) a.value = teamA;
+    if (teamB && all.some(t => t.team === teamB)) b.value = teamB;
+    _compareState.aValue = a.value;
+    _compareState.bValue = b.value;
+    paintCompare();
+  };
+
+  _compareInitialized = true;
+  paintCompare();
+}
+
+function paintCompare() {
+  const data = activeData();
+  const travel = window._travel;
+  const a = document.getElementById('cmp-a');
+  const b = document.getElementById('cmp-b');
+  const grid = document.getElementById('compare-grid');
+  if (!a || !b || !grid) return;
 
   const travelKm = (travel?.total_group_travel_km_by_team) || {};
   const travelDelta = {};
   (travel?.all_diffs || []).forEach(d => travelDelta[d.team] = d.delta_pp);
+
+  function pctBar(x, y) {
+    if (x == null || y == null) return 0;
+    const m = Math.max(Math.abs(x), Math.abs(y));
+    if (m === 0) return 0;
+    return Math.min(100, (Math.abs(x) / m) * 100);
+  }
 
   function row(label, va, vb, fmtFn, betterIsHigher = true) {
     const cmp = (va == null || vb == null) ? '' :
@@ -1009,52 +1171,34 @@ function renderCompare(data, travel) {
       <div class="cmp-b-val">${vb == null ? '—' : fmtFn(vb)}</div>
     </div>`;
   }
-  function pctBar(x, y) {
-    if (x == null || y == null) return 0;
-    const m = Math.max(Math.abs(x), Math.abs(y));
-    if (m === 0) return 0;
-    return Math.min(100, (Math.abs(x) / m) * 100);
-  }
 
-  function paint() {
-    const ta = data.team_predictions.find(t => t.team === a.value);
-    const tb = data.team_predictions.find(t => t.team === b.value);
-    if (!ta || !tb) return;
+  // Read current selects from the DOM, not from data — preserves the user's
+  // choice across live re-renders. Fall back to whatever's in the dropdown if
+  // the selected team isn't in the active dataset (shouldn't happen, but
+  // defensive).
+  const ta = data.team_predictions.find(t => t.team === a.value);
+  const tb = data.team_predictions.find(t => t.team === b.value);
+  if (!ta || !tb) return;
 
-    grid.innerHTML = `
-      <div class="cmp-head">
-        <div class="cmp-team-a">${confedDotHtml(ta.team)}<strong>${escapeHtml(ta.team)}</strong><span class="muted small">Group ${escapeHtml(ta.group)}</span></div>
-        <div class="cmp-vs">vs</div>
-        <div class="cmp-team-b">${confedDotHtml(tb.team)}<strong>${escapeHtml(tb.team)}</strong><span class="muted small">Group ${escapeHtml(tb.group)}</span></div>
-      </div>
-      <div class="cmp-rows">
-        ${row('Champion',           ta.p_champion,           tb.p_champion,           fmt)}
-        ${row('Reach Final',        ta.p_reach_final,        tb.p_reach_final,        fmt)}
-        ${row('Reach SF',           ta.p_reach_sf,           tb.p_reach_sf,           fmt)}
-        ${row('Reach QF',           ta.p_reach_qf,           tb.p_reach_qf,           fmt)}
-        ${row('Advance from group', ta.p_advance_groups,     tb.p_advance_groups,     fmt0)}
-        ${row('Win group',          ta.p_finish_1st_group,   tb.p_finish_1st_group,   fmt0)}
-        ${row('Elo',                ta.elo,                  tb.elo,                  v => Math.round(v))}
-        ${row('FIFA points',        ta.fifa_pts,             tb.fifa_pts,             v => v ? v.toFixed(0) : '—')}
-        ${row('Squad value (€M)',   ta.squad_value_eur_m,    tb.squad_value_eur_m,    fmtNum)}
-        ${row('Group travel (km)',  travelKm[ta.team],       travelKm[tb.team],       v => Math.round(v).toLocaleString(), false)}
-        ${row('Travel impact (pp)', travelDelta[ta.team],    travelDelta[tb.team],    v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`)}
-      </div>`;
-  }
-
-  a.addEventListener('change', paint);
-  b.addEventListener('change', paint);
-  swap?.addEventListener('click', () => {
-    const tmp = a.value; a.value = b.value; b.value = tmp; paint();
-  });
-
-  window._setCompare = (teamA, teamB) => {
-    if (teamA && data.team_predictions.some(t => t.team === teamA)) a.value = teamA;
-    if (teamB && data.team_predictions.some(t => t.team === teamB)) b.value = teamB;
-    paint();
-  };
-
-  paint();
+  grid.innerHTML = `
+    <div class="cmp-head">
+      <div class="cmp-team-a">${confedDotHtml(ta.team)}<strong>${escapeHtml(ta.team)}</strong><span class="muted small">Group ${escapeHtml(ta.group)}</span></div>
+      <div class="cmp-vs">vs</div>
+      <div class="cmp-team-b">${confedDotHtml(tb.team)}<strong>${escapeHtml(tb.team)}</strong><span class="muted small">Group ${escapeHtml(tb.group)}</span></div>
+    </div>
+    <div class="cmp-rows">
+      ${row('Champion',           ta.p_champion,           tb.p_champion,           fmt)}
+      ${row('Reach Final',        ta.p_reach_final,        tb.p_reach_final,        fmt)}
+      ${row('Reach SF',           ta.p_reach_sf,           tb.p_reach_sf,           fmt)}
+      ${row('Reach QF',           ta.p_reach_qf,           tb.p_reach_qf,           fmt)}
+      ${row('Advance from group', ta.p_advance_groups,     tb.p_advance_groups,     fmt0)}
+      ${row('Win group',          ta.p_finish_1st_group,   tb.p_finish_1st_group,   fmt0)}
+      ${row('Elo',                ta.elo,                  tb.elo,                  v => Math.round(v))}
+      ${row('FIFA points',        ta.fifa_pts,             tb.fifa_pts,             v => v ? v.toFixed(0) : '—')}
+      ${row('Squad value (€M)',   ta.squad_value_eur_m,    tb.squad_value_eur_m,    fmtNum)}
+      ${row('Group travel (km)',  travelKm[ta.team],       travelKm[tb.team],       v => Math.round(v).toLocaleString(), false)}
+      ${row('Travel impact (pp)', travelDelta[ta.team],    travelDelta[tb.team],    v => `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`)}
+    </div>`;
 }
 
 // ---- DEEP LINKING (hardened — malformed hashes never crash) ----
