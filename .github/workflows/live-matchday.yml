@@ -10,8 +10,11 @@ name: Live matchday refresh
 #   - (Optional) Add repo SECRET `SPORTMONKS_TOKEN` if using Sportmonks
 # Without a provider key the orchestrator silently falls back to manual/mock mode.
 on:
+  # After 2026-07-20, disable this workflow via the GitHub UI.
   schedule:
-    - cron: '*/10 * * * *'
+    # Every 10 minutes during the WC26 window: 10–30 Jun and 1–20 Jul
+    - cron: '*/10 * 10-30 6 *'
+    - cron: '*/10 * 1-20 7 *'
   workflow_dispatch:
     inputs:
       provider:
@@ -48,6 +51,12 @@ jobs:
           cache: 'pip'
 
       - run: pip install -r requirements.txt
+
+      - name: Run pytest
+        if: ${{ hashFiles('tests/**/*.py') != '' }}
+        run: |
+          pip install pytest
+          pytest tests/ -v --tb=short
 
       - name: Date gate (skip if outside tournament window)
         id: gate
@@ -188,8 +197,8 @@ jobs:
       #   1. Create a token at https://vercel.com/account/settings/tokens
       #      (scope: full account or just this project)
       #   2. `gh secret set VERCEL_TOKEN --body <token>`
-      #   3. `gh variable set VERCEL_ORG_ID --body team_bWwpYxbVIFj0MKmBwqUc17Bs`
-      #   4. `gh variable set VERCEL_PROJECT_ID --body prj_xjonkzd9gY5QtdW01r8LSyvM4Ikc`
+      #   3. `gh variable set VERCEL_ORG_ID --body <your team_… id>`
+      #   4. `gh variable set VERCEL_PROJECT_ID --body <your prj_… id>`
       # Once those exist, every live tick auto-deploys to production.
       # Until then, this step is a no-op (Git integration handles deploys
       # if it's healthy; if it isn't, you'll need to run `vercel deploy

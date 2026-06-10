@@ -26,6 +26,12 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Run pytest
+        if: ${{ hashFiles('tests/**/*.py') != '' }}
+        run: |
+          pip install pytest
+          pytest tests/ -v --tb=short
+
       - name: Re-train + evaluate + sensitivity
         run: |
           python scripts/01_prepare_data.py
