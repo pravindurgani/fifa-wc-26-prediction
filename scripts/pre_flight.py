@@ -424,10 +424,20 @@ def stress_tests():
     }
     backup_path = LIVE / "results_2026.json"
     original = backup_path.read_text() if backup_path.exists() else None
+    # Force mock mode for the stress runs. Without this, a developer with
+    # FOOTBALL_PROVIDER=api_football or API_FOOTBALL_KEY set in their shell
+    # would have fetch_results hit the real API, ignore the injected file,
+    # and either preserve the fake record (stress-2 fails) or write real
+    # provider data (stress-1 fails). The stress test is a pure-fetch-path
+    # unit test, not an integration test.
+    mock_env = {**os.environ,
+                "FOOTBALL_PROVIDER": "mock",
+                "WC_RESULTS_SOURCE": "mock"}
     try:
         backup_path.write_text(json.dumps(fake_results, indent=2))
         rc = subprocess.run([sys.executable, "scripts/live/fetch_results.py"],
-                            cwd=str(ROOT), capture_output=True, text=True).returncode
+                            cwd=str(ROOT), env=mock_env,
+                            capture_output=True, text=True).returncode
         check("[stress-1] fetch_results survives injected FT result", rc == 0)
         after = json.loads(backup_path.read_text())
         check("[stress-1] injected FT match passes validation",
@@ -445,7 +455,8 @@ def stress_tests():
     try:
         backup_path.write_text(json.dumps(fake_abandon, indent=2))
         subprocess.run([sys.executable, "scripts/live/fetch_results.py"],
-                       cwd=str(ROOT), capture_output=True, text=True)
+                       cwd=str(ROOT), env=mock_env,
+                       capture_output=True, text=True)
         after = json.loads(backup_path.read_text())
         check("[stress-2] ABANDONED match not locked",
               len(after.get("completed_matches", [])) == 0)
