@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /circuit-breaker-state.json
+
+Sitemap: https://fifa-wc-26-prediction.vercel.app/sitemap.xml
