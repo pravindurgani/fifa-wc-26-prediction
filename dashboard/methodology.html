@@ -250,12 +250,18 @@
       </div>
       <div>
         <h2>What this model still can't see</h2>
+        <p class="muted small" style="margin-top:0">
+          Final scores <em>are</em> automated: an API-Football poll runs every 10 minutes during
+          the tournament window, locks completed matches verbatim, and re-runs the simulator.
+          Everything below is what the public main model does <em>not</em> yet auto-feed.
+        </p>
         <ul>
-          <li><strong>Last-minute injuries / suspensions</strong> — squad announcements typically come 1-2 days before the opener.</li>
+          <li><strong>Injuries, suspensions, lineups, player availability</strong> — squad and matchday news goes through the manual <code>data/live/team_adjustments.json</code> Elo nudge file, not an auto-fed feed. Auto-ingestion lives on a separate research branch.</li>
+          <li><strong>Live weather forecasts</strong> — climate is bucketed (mild / hot / very_hot / altitude) per host city, not pulled from any forecast API.</li>
+          <li><strong>True xG</strong> — international xG data is patchy pre-2017; not yet integrated.</li>
           <li><strong>Refereeing patterns</strong> — controversial calls swing tight matches.</li>
           <li><strong>Tactical match-ups</strong> — some coaches simply have a manager's number.</li>
-          <li><strong>In-tournament momentum</strong> — pre-tournament form is held static across simulations (live mode is foundation-laid but not yet auto-feeding).</li>
-          <li><strong>Live weather forecasts</strong> — climate is bucketed (mild / hot / altitude), not pulled from forecast APIs.</li>
+          <li><strong>In-tournament Elo drift</strong> — base ratings are held static across simulations; live mode locks scorelines but doesn't yet recompute baseline Elo mid-tournament.</li>
         </ul>
         <p>
           That's why the top contender doesn't exceed ~25% even with all the modelling

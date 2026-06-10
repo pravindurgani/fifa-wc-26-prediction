@@ -187,7 +187,8 @@ Top-6 rank ordering identical across all 22 scenarios. The model is robust.
 ## Known limitations
 
 - **xG features**: deferred — international xG data is patchy pre-2017; would require throwing out 2 decades of training. May add as recent-form modifier later.
-- **Live injury feed**: framework in place (`data/live/team_adjustments.json`), but currently manual. API-Football / Sportmonks integration is a future enhancement.
+- **Final scores**: auto-fed via API-Football (active in production — polls every 10 min during the tournament window, locks completed matches, re-runs the simulator).
+- **Injuries / lineups / weather / player availability**: not auto-fed in the public main model. Injury and suspension nudges go through the manual `data/live/team_adjustments.json` Elo file; live weather forecasts are bucketed (mild / hot / very_hot / altitude) per host city. Auto-ingestion of these feeds lives on the `matchday-intelligence` research branch, not yet merged.
 - **In-tournament momentum**: pre-tournament form is held mostly static across the 25k sims. Live mode locks completed scorelines but does not yet auto-update Elo mid-tournament (next phase).
 - **Refereeing patterns**: not modeled.
 
@@ -198,6 +199,8 @@ Top-6 rank ordering identical across all 22 scenarios. The model is robust.
 - **2026 schedule + bracket**: FIFA.com (final draw 5 Dec 2025), Annex C regulations
 - **Squad values**: Transfermarkt via Sportingpedia / GiveMeSport
 - **Stadium metadata**: hand-curated host city coordinates, altitude, climate
+- **Live scores**: **API-Football (active in production)** — polled every 10 min during the tournament window (11 Jun → 19 Jul 2026); completed matches are locked and the simulator re-runs.
+- **Injuries / lineups / weather / player availability**: **not auto-fed in public main yet** — they live on the `matchday-intelligence` research branch. Mid-tournament Elo nudges still go through the manual `data/live/team_adjustments.json` file.
 
 ## License
 

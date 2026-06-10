@@ -364,12 +364,12 @@ cd dashboard &amp;&amp; python3 -m http.server 8765</pre>
       <div>
         <h2>Known limitations</h2>
         <ul>
+          <li><strong>Final-score automation is active.</strong> API-Football polls every 10 minutes during the tournament window, locks completed scorelines, and re-runs the simulator. Injury / lineup / player-availability feeds, live weather forecasts, and true xG are <em>not</em> auto-fed in the public main model — they live on the <code>matchday-intelligence</code> research branch. The public model can still be hand-corrected mid-tournament via <code>data/live/team_adjustments.json</code> Elo nudges.</li>
           <li><strong>xG features deferred.</strong> International xG data is patchy pre-2017; including it would shrink the training window by two decades.</li>
-          <li><strong>Live injury / lineup feed is manual.</strong> <code>data/live/team_adjustments.json</code> accepts Elo nudges, but API-Football / Sportmonks integration is a future enhancement.</li>
           <li><strong>Pre-tournament Elo is held static across sims.</strong> Live mode locks completed scorelines but does not yet recompute baseline Elo mid-tournament — that is the next phase.</li>
           <li><strong>Fair-play points are approximated as zero.</strong> Real implementations need card data per match; collecting it is on the roadmap.</li>
           <li><strong>Refereeing patterns are not modelled.</strong></li>
-          <li><strong>Weather is bucketed (mild / hot / very_hot / high_altitude_*)</strong> rather than pulled from a forecast API.</li>
+          <li><strong>Weather is bucketed (mild / hot / very_hot / high_altitude_*)</strong> per host city rather than pulled from a forecast API.</li>
         </ul>
         <p>These are why no contender exceeds ~25%. The World Cup is structurally an upset machine.</p>
       </div>
