@@ -218,7 +218,7 @@ button:focus-visible, select:focus-visible {
 }
 .brand-icon svg { width: 22px; height: 22px; color: white; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-.brand-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.brand-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; margin: 0; line-height: 1.2; }
 .brand-sub { font-size: 11px; color: var(--text-2); margin-top: 1px; display: flex; align-items: center; gap: 6px; }
 .ver-pill {
   display: inline-block;
@@ -1477,4 +1477,35 @@ section#contenders .card > .filter-row {
   .card:hover, .card.hero-champion:hover, .author-link:hover {
     transform: none;
   }
+}
+
+/* Accessibility — skip-to-content link + sr-only utility */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  z-index: 9999;
+  padding: 8px 14px;
+  background: var(--accent, #3B82F6);
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  transition: top 0.15s;
+}
+.skip-link:focus-visible {
+  top: 8px;
+  outline: 2px solid var(--text);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

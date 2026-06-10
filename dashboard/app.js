@@ -35,7 +35,7 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
   localStorage.setItem('wc26-theme', cur);
   if (window._charts) window._charts.forEach(c => c.destroy());
   window._charts = [];
-  if (window._data) renderAllCharts(window._data, window._cal);
+  if (window._data) renderAllCharts(activeData(), window._cal);
 });
 
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -43,6 +43,7 @@ const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyV
 // ---- TOOLTIPS for .stat-info ----
 function initTooltips() {
   let tip;
+  let activeTip = null;
   function show(target, text) {
     if (!tip) {
       tip = document.createElement('div');
@@ -52,18 +53,64 @@ function initTooltips() {
     tip.textContent = text;
     tip.style.opacity = '1';
     const r = target.getBoundingClientRect();
-    tip.style.left = Math.min(window.innerWidth - 320, Math.max(8, r.left + r.width/2 - 150)) + 'px';
+    tip.style.left = Math.min(window.innerWidth - 320 + window.scrollX, Math.max(8 + window.scrollX, r.left + window.scrollX + r.width/2 - 150)) + 'px';
     tip.style.top  = (r.bottom + window.scrollY + 8) + 'px';
   }
   function hide() { if (tip) tip.style.opacity = '0'; }
-  document.querySelectorAll('.stat-info').forEach(el => {
+  const icons = document.querySelectorAll('.stat-info');
+  icons.forEach((el, i) => {
     const txt = el.dataset.tip;
     if (!txt) return;
+    // ARIA: stable id + hidden description span screen readers can resolve.
+    const tipId = `stat-tip-${i}`;
+    if (!el.id) el.id = `stat-info-${i}`;
+    el.setAttribute('aria-describedby', tipId);
+    const srSpan = document.createElement('span');
+    srSpan.id = tipId;
+    srSpan.className = 'sr-only';
+    srSpan.style.cssText = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0';
+    srSpan.textContent = txt;
+    el.appendChild(srSpan);
+
+    // Desktop: hover/focus keeps current behaviour.
     el.addEventListener('mouseenter', () => show(el, txt));
     el.addEventListener('focus',      () => show(el, txt));
-    el.addEventListener('mouseleave', hide);
-    el.addEventListener('blur',       hide);
+    el.addEventListener('mouseleave', () => { if (activeTip !== el) hide(); });
+    el.addEventListener('blur',       () => { if (activeTip !== el) hide(); });
+
+    // Touch / tap: toggle sticky tip.
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeTip === el) { hide(); activeTip = null; }
+      else { show(el, txt); activeTip = el; }
+    });
   });
+
+  // Tap outside dismisses any sticky tip.
+  document.addEventListener('click', (e) => {
+    if (activeTip && !activeTip.contains(e.target)) {
+      hide();
+      activeTip = null;
+    }
+  });
+}
+
+// ---- LIVE-MODE DATA SELECTOR ----
+// Returns the predictions object every renderer should consume. When the live
+// re-simulation file is well-formed AND live-state declares we're in live mode,
+// we hand back the live payload; otherwise the pre-tournament baseline.
+function isValidPredictions(p) {
+  return p
+    && Array.isArray(p.team_predictions) && p.team_predictions.length === 48
+    && Array.isArray(p.match_predictions) && p.match_predictions.length === 72
+    && p.team_predictions.every(t => typeof t.p_champion === 'number' && t.p_champion >= 0 && t.p_champion <= 1);
+}
+
+function activeData() {
+  const live = window._livePred;
+  const ls = window._liveState;
+  if (ls && ls.mode === 'live' && isValidPredictions(live)) return live;
+  return window._data;
 }
 
 // ---- Count-up animation ----
@@ -85,10 +132,12 @@ function countUp(el, target, suffix = '', duration = 900) {
 
 // ---- Boot ----
 async function init() {
-  const buster = `?t=${Date.now()}`;
-  const fetchOptional = (url) => fetch(url + buster).then(r => r.ok ? r.json() : null).catch(() => null);
+  // No cache-buster — vercel.json already sets `max-age=0, must-revalidate` on
+  // the live-data JSON files (predictions/predictions_live/live_state/live_delta)
+  // and longer caching is intentional for the rest. Busting defeats that.
+  const fetchOptional = (url) => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
   const [data, cal, wf, abl, travel, liveState, liveDelta, livePred] = await Promise.all([
-    fetch('./predictions.json' + buster).then(r => r.json()),
+    fetch('./predictions.json').then(r => r.json()),
     fetchOptional('./calibration.json'),
     fetchOptional('./walk_forward.json'),
     fetchOptional('./ablation.json'),
@@ -101,25 +150,27 @@ async function init() {
   window._cal = cal;
   window._travel = travel;
   window._liveDelta = liveDelta;
+  window._liveState = liveState;
+  window._livePred = livePred;
   window._charts = [];
 
   initTooltips();
-  renderLastUpdated(data, liveState);
+  renderLastUpdated(activeData(), liveState);
   renderLiveStatusBar(liveState);
-  renderHero(data, liveState, liveDelta);
-  renderStatsStrip(data, cal);
-  renderStorylines(data, travel);
+  renderHero(activeData(), liveState, liveDelta);
+  renderStatsStrip(activeData(), cal);
+  renderStorylines(activeData(), travel);
   renderMovers(data, liveState, liveDelta);
-  renderContenders(data, liveDelta, travel);
-  renderGroups(data);
-  renderInteresting(data);
-  renderMatches(data, liveState);
-  renderCompare(data, travel);
-  renderAllCharts(data, cal);
+  renderContenders(activeData(), liveDelta, travel);
+  renderGroups(activeData());
+  renderInteresting(activeData());
+  renderMatches(activeData(), liveState);
+  renderCompare(activeData(), travel);
+  renderAllCharts(activeData(), cal);
   if (wf) renderWalkForward(wf);
   if (abl) renderAblation(abl);
   if (travel) renderTravel(travel);
-  renderFooter(data, liveState);
+  renderFooter(activeData(), liveState);
 
   // Apply deep link AFTER renders settle
   applyDeepLink();
@@ -132,11 +183,11 @@ async function init() {
 }
 
 // Re-fetch the three live JSON files. Returns the new triple if any of them
-// changed vs the in-memory snapshot, else null.
+// changed vs the in-memory snapshot, else null. `cache: 'no-store'` is enough —
+// no query-string buster needed (vercel.json sends must-revalidate already).
 async function fetchLiveTriple() {
-  const buster = `?t=${Date.now()}`;
   const fetchOptional = (url) =>
-    fetch(url + buster, { cache: 'no-store' })
+    fetch(url, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null);
   const [liveState, liveDelta, livePred] = await Promise.all([
@@ -148,18 +199,34 @@ async function fetchLiveTriple() {
 }
 
 function applyLiveUpdate({ liveState, liveDelta, livePred }) {
-  const data = window._data;
-  const travel = window._travel;
-  const cal = window._cal;
+  // Update the global state FIRST so activeData() and every downstream renderer
+  // sees the new live payload before they pick which dataset to draw.
+  window._liveState = liveState;
   window._liveDelta = liveDelta;
   window._livePred = livePred;
-  renderLastUpdated(data, liveState);
+
+  const data = window._data;            // pre-tournament baseline (movers anchor)
+  const travel = window._travel;
+  const cal = window._cal;
+
+  renderLastUpdated(activeData(), liveState);
   renderLiveStatusBar(liveState);
-  renderHero(data, liveState, liveDelta);
+  renderHero(activeData(), liveState, liveDelta);
+  renderStatsStrip(activeData(), cal);
+  renderStorylines(activeData(), travel);
   renderMovers(data, liveState, liveDelta);
-  renderContenders(data, liveDelta, travel);
-  renderMatches(data, liveState);
-  renderFooter(data, liveState);
+  renderContenders(activeData(), liveDelta, travel);
+  renderGroups(activeData());
+  renderInteresting(activeData());
+  renderMatches(activeData(), liveState);
+  renderCompare(activeData(), travel);
+  renderFooter(activeData(), liveState);
+
+  // Rebuild charts against the live payload — Chart.js instances must be
+  // destroyed before re-instantiation or the canvas accumulates state.
+  if (window._charts) window._charts.forEach(c => c.destroy());
+  window._charts = [];
+  renderAllCharts(activeData(), window._cal);
 }
 
 let _livePollTimer = null;
@@ -1222,7 +1289,9 @@ function renderAblation(abl) {
 
 function renderTravel(travel) {
   const km = travel.total_group_travel_km_by_team || {};
-  const top = Object.entries(km).filter(([_, k]) => k > 0).slice(0, 8);
+  // Sort by km descending — don't rely on Python dict insertion order surviving
+  // JSON round-trip + V8 object-key enumeration semantics.
+  const top = Object.entries(km).filter(([_, k]) => k > 0).sort((a, b) => b[1] - a[1]).slice(0, 8);
   document.getElementById('travel-km-list').innerHTML = top.map(([t, k]) =>
     `<li><span>${confedDotHtml(t)}${escapeHtml(t)}</span><span></span><span class="delta">${k.toFixed(0)} km</span></li>`
   ).join('');
@@ -1240,10 +1309,34 @@ function renderFooter(data, liveState) {
   const seeds = data.n_seeds || 1;
   const sps = (data.n_simulations_per_seed || data.n_simulations || 0).toLocaleString();
   const last = liveState?.last_updated_utc || data.generated_at || '';
-  document.getElementById('footer-meta').textContent =
-    `Generated ${(last || '').slice(0, 19)} UTC · ${total} simulations (${seeds} seeds × ${sps}) · model trained on ${m.n_train ? m.n_train.toLocaleString() : '—'} matches`;
+  const el = document.getElementById('footer-meta');
+  if (!el) return;
+  const base = `Generated ${(last || '').slice(0, 19)} UTC · ${total} simulations (${seeds} seeds × ${sps}) · model trained on ${m.n_train ? m.n_train.toLocaleString() : '—'} matches`;
+  // Provenance: if the renderer was handed the live re-simulation, mark it so
+  // mismatches between static + live files are visible at a glance.
+  const isLive = data === window._livePred;
+  const genAt = (data.generated_at || '').slice(0, 16).replace('T', ' ');
+  el.innerHTML = escapeHtml(base) + (isLive
+    ? ` <span class="muted small">· source: predictions_live.json${genAt ? ` (generated ${escapeHtml(genAt)} UTC)` : ''}</span>`
+    : '');
 }
 
 init().catch(err => {
-  document.body.innerHTML = `<div style="padding:40px;color:var(--danger);font-family:system-ui"><h2>Could not load data</h2><pre>${escapeHtml(err.stack || err)}</pre></div>`;
+  // Log to console only — never leak stack traces / paths into the DOM.
+  console.error('[init]', err);
+  const main = document.querySelector('main.container') || document.body;
+  const card = document.createElement('div');
+  card.className = 'card error-card reveal';
+  card.setAttribute('role', 'alert');
+  card.style.cssText = 'padding:24px;margin:24px 0;border:1px solid var(--danger,#dc2626);background:var(--bg-elev,#1a1a1a);color:var(--text)';
+  card.innerHTML = `
+    <h3 style="margin:0 0 8px;color:var(--danger,#dc2626)">Could not load data</h3>
+    <p class="muted small" style="margin:0 0 12px">The dashboard JSON files failed to load. This is usually transient.</p>
+    <button id="retry-init" class="btn-secondary" style="cursor:pointer">Retry</button>
+  `;
+  main.prepend(card);
+  document.getElementById('retry-init')?.addEventListener('click', () => {
+    card.remove();
+    init().catch(e2 => console.error('[retry]', e2));
+  });
 });
