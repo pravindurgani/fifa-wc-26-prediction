@@ -4,9 +4,6 @@
   "outputDirectory": "dashboard",
   "framework": null,
   "cleanUrls": true,
-  "functions": {
-    "api/dispatch.ts": { "runtime": "edge" }
-  },
   "crons": [
     { "path": "/api/dispatch", "schedule": "*/10 * * * *" }
   ],
