@@ -36,3 +36,4 @@ circuit_breaker_state.json
 data/live/circuit_breaker_state.json
 .vercel
 .env*
+node_modules
