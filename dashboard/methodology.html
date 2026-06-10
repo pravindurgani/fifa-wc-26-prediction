@@ -251,9 +251,10 @@
       <div>
         <h2>What this model still can't see</h2>
         <p class="muted small" style="margin-top:0">
-          Final scores <em>are</em> automated: an API-Football poll runs every 10 minutes during
-          the tournament window, locks completed matches verbatim, and re-runs the simulator.
-          Everything below is what the public main model does <em>not</em> yet auto-feed.
+          Final scores <em>are</em> automated: an API-Football poll is scheduled every 10 minutes during the
+          tournament window, locks completed matches verbatim, and re-runs the simulator. GitHub may throttle
+          scheduled events on free-tier runners, so realistic refresh sits between ~10 min and ~1 h after a
+          final whistle. Everything below is what the public main model does <em>not</em> yet auto-feed.
         </p>
         <ul>
           <li><strong>Injuries, suspensions, lineups, player availability</strong> — squad and matchday news goes through the manual <code>data/live/team_adjustments.json</code> Elo nudge file, not an auto-fed feed. Auto-ingestion lives on a separate research branch.</li>
