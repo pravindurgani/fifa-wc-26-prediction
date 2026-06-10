@@ -26,8 +26,12 @@ name: Matchday intelligence (slow cadence)
 # fan-out ≈ 30-200 calls/day depending on schedule density. Comfortably
 # inside the 7,500/day Pro-plan ceiling.
 on:
-  schedule:
-    - cron: '0 */3 * * *'    # 00:00, 03:00, 06:00, ... UTC
+  # Schedule disabled during launch to reduce GitHub cron throttling pressure
+  # on live-matchday.yml (the operationally critical workflow). The research
+  # branch remains reachable via manual dispatch.
+  # Re-enable by uncommenting once the live cadence is externally driven.
+  # schedule:
+  #   - cron: '0 */3 * * *'    # 00:00, 03:00, 06:00, ... UTC
   workflow_dispatch:
     inputs:
       hours_ahead:
