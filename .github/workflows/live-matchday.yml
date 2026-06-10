@@ -54,9 +54,7 @@ jobs:
 
       - name: Run pytest
         if: ${{ hashFiles('tests/**/*.py') != '' }}
-        run: |
-          pip install pytest
-          pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short
 
       - name: Date gate (skip if outside tournament window)
         id: gate

@@ -28,9 +28,7 @@ jobs:
 
       - name: Run pytest
         if: ${{ hashFiles('tests/**/*.py') != '' }}
-        run: |
-          pip install pytest
-          pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short
 
       - name: Re-train + evaluate + sensitivity
         run: |
