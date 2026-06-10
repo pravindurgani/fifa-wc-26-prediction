@@ -54,6 +54,14 @@ ROOT = Path(__file__).resolve().parents[2]
 LIVE = ROOT / "data" / "live"
 RAW = ROOT / "data" / "raw"
 
+# Module-level scratch list for fetch-time warnings (cleared at top of cmd_fetch
+# / main). Provider fetchers append entries describing unmapped-yet-locked
+# fixtures so the orchestrator can surface them in live_state.warnings instead
+# of silently stalling at the last mapped match (e.g. when knockout fixture
+# IDs land in the API before the provider_fixture_map.json is rebuilt). See
+# main() — this list is merged into the persisted `warnings` array.
+_FETCH_WARNINGS: list[dict] = []
+
 LOCKED_STATUSES = {"FT", "AET", "PEN"}
 WARN_STATUSES = {"POSTPONED", "ABANDONED", "CANCELED", "CANCELLED",
                  "SUSPENDED", "INTERRUPTED", "WALKOVER", "WALKOVERAWARD"}
@@ -365,6 +373,25 @@ def fetch_api_football(api_key: str, dry_run: bool = False) -> list[dict]:
         print(f"[fetch_results] {len(unmapped)} unmapped provider fixtures (likely friendlies)")
         for u in unmapped[:3]:
             print(f"  ? {u}")
+        # Critical case: unmapped fixture is already LOCKED (FT/AET/PEN).
+        # The map is missing a real WC match — likely a knockout fixture
+        # that landed in the provider before provider_fixture_map.json was
+        # rebuilt. Surface as a warning so the orchestrator can banner it.
+        for u in unmapped:
+            canon = APIFOOTBALL_STATUS_MAP.get(u.get("status", ""), u.get("status", ""))
+            if canon in LOCKED_STATUSES:
+                fxid = u.get("fixture_id", "?")
+                home = u.get("home", "?")
+                away = u.get("away", "?")
+                dt = u.get("date", "?")
+                _FETCH_WARNINGS.append({
+                    "type": "unmapped_locked_fixture",
+                    "message": (
+                        f"Provider fixture {fxid} ({home} vs {away}, {dt}) "
+                        "is locked but has no map entry — rebuild "
+                        "data/live/provider_fixture_map.json"
+                    ),
+                })
 
     return out
 
@@ -492,6 +519,24 @@ def fetch_football_data(token: str, dry_run: bool = False) -> list[dict]:
         print(f"[fetch_results] {len(unmapped)} unmapped football-data fixtures (likely friendlies)")
         for u in unmapped[:3]:
             print(f"  ? {u}")
+        # Same critical case for football-data.org: LOCKED unmapped fixtures
+        # indicate a stale provider_fixture_map.json (commonly the post-R32
+        # draw knockout IDs). Surface for the live_state banner.
+        for u in unmapped:
+            canon = FOOTBALLDATA_STATUS_MAP.get(u.get("status", ""), u.get("status", ""))
+            if canon in LOCKED_STATUSES:
+                fxid = u.get("id", "?")
+                home = u.get("home", "?")
+                away = u.get("away", "?")
+                dt = u.get("date", "?")
+                _FETCH_WARNINGS.append({
+                    "type": "unmapped_locked_fixture",
+                    "message": (
+                        f"Provider fixture {fxid} ({home} vs {away}, {dt}) "
+                        "is locked but has no map entry — rebuild "
+                        "data/live/provider_fixture_map.json"
+                    ),
+                })
 
     return out
 
@@ -539,6 +584,10 @@ def main() -> int:
 
     src = (args.provider or get_provider_name()).lower().replace("-", "_")
     print(f"[fetch_results] provider={src}{' (dry-run)' if args.dry_run else ''}")
+
+    # Reset module-level fetch-time warnings so successive invocations don't
+    # leak entries from a prior run (matters for tests + long-running orchestrators).
+    _FETCH_WARNINGS.clear()
 
     try:
         cfg = json.loads((RAW / "wc2026_config.json").read_text())
@@ -620,11 +669,19 @@ def main() -> int:
         seen_m.add(m["m"])
         valid.append(m)
 
+    # Merge fetch-time warnings (e.g. unmapped_locked_fixture) so the
+    # orchestrator can surface them via live_state.warnings.
+    if _FETCH_WARNINGS:
+        warnings_list.extend(_FETCH_WARNINGS)
+
     print(f"[fetch_results] valid={len(valid)} rejected={len(rejected)} warnings={len(warnings_list)}")
     for m, why in rejected[:5]:
         print(f"  ✗ M{m.get('m', '?')}: {why}")
     for w in warnings_list[:5]:
-        print(f"  ⚠ M{w['m']}: {w['status']} {('· ' + w['note']) if w['note'] else ''}")
+        if w.get("type") == "unmapped_locked_fixture":
+            print(f"  ⚠ {w.get('message', '')}")
+        else:
+            print(f"  ⚠ M{w.get('m', '?')}: {w.get('status', '?')} {('· ' + w['note']) if w.get('note') else ''}")
 
     if args.dry_run:
         print("[fetch_results] dry-run — no file written")
