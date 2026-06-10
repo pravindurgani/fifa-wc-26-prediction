@@ -159,6 +159,68 @@ def get_football_data_token() -> str | None:
 
 
 # ─── ATOMIC IO ─────────────────────────────────────────────────────────────
+def _material_results(payload: dict) -> tuple:
+    """Tick-to-tick material fingerprint of results_2026.json.
+
+    Excludes the top-level `updated_at` AND each match's per-record
+    `updated_at` so a no-op tick → byte-identical file → no git diff →
+    no commit → no Vercel deploy. Mirrors the _material() pattern in
+    run_live_update.write_live_state().
+
+    Without this guard, the bare timestamp bump every 10 min during the
+    14h match window = ~5,600 junk commits over 39 days. Live_state
+    already has its own idempotency layer (924e20d); this completes the
+    pair so the workflow's "Commit updated JSON" step can stay no-op
+    on genuinely-quiet ticks.
+    """
+    def _scrub(m: dict) -> dict:
+        return {k: v for k, v in m.items() if k != "updated_at"}
+    matches = payload.get("completed_matches") or []
+    return (
+        payload.get("source"),
+        json.dumps([_scrub(m) for m in matches], sort_keys=True),
+        json.dumps(payload.get("warnings") or [], sort_keys=True),
+    )
+
+
+def _stamp_match_updated_at(
+    candidate_matches: list[dict],
+    prior_matches: list[dict] | None,
+) -> list[dict]:
+    """For each candidate match, reuse prior `updated_at` if material identical.
+
+    Locked matches don't change once FT — their scoreline, status, and
+    elapsed are frozen. Without this, every fetch overwrites each match's
+    per-record updated_at with `now()`, defeating the outer idempotency
+    guard because _material_results sees identical material but the inner
+    timestamps differ if we compared them.
+
+    We strip `updated_at` from the material fingerprint via _scrub() above,
+    so this stamp-stability function is belt-and-braces — it ALSO keeps
+    the on-disk bytes stable, which matters for human-readable diffs and
+    for any downstream consumer that does dict-equality on the full record.
+    """
+    if not prior_matches:
+        return candidate_matches
+    prior_by_m = {m.get("m"): m for m in prior_matches if isinstance(m, dict)}
+
+    def _match_material(m: dict) -> tuple:
+        return (
+            m.get("home_score"), m.get("away_score"), m.get("status"),
+            m.get("status_long"), m.get("elapsed"), m.get("source"),
+            m.get("raw_status"), m.get("date"), m.get("home"), m.get("away"),
+        )
+
+    out = []
+    for cand in candidate_matches:
+        prev = prior_by_m.get(cand.get("m"))
+        if prev and _match_material(prev) == _match_material(cand):
+            cand = dict(cand)
+            cand["updated_at"] = prev.get("updated_at") or cand.get("updated_at")
+        out.append(cand)
+    return out
+
+
 def atomic_write_json(path: Path, payload: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -706,18 +768,41 @@ def main() -> int:
             if src != "mock" and len(valid) < existing_n:
                 print(f"[fetch_results] provider returned {len(valid)} locked matches but "
                       f"existing has {existing_n}; refusing to shrink (preserving existing)")
-                # Still update warnings + updated_at so the orchestrator sees freshness
+                # Update warnings + source so the orchestrator sees freshness,
+                # but PRESERVE updated_at if material is byte-identical
+                # post-mutation. Stops shrink-refuse ticks from churning the
+                # file (and triggering a deploy) when nothing genuine changed.
+                prev_material = _material_results(existing)
                 existing["warnings"] = warnings_list
-                existing["updated_at"] = datetime.now(timezone.utc).isoformat()
                 existing["source"] = src
+                if _material_results(existing) != prev_material:
+                    existing["updated_at"] = datetime.now(timezone.utc).isoformat()
                 atomic_write_json(out_path, existing)
                 return 0
         except Exception:
             pass
 
+    # Idempotency: preserve `updated_at` and per-match timestamps when material
+    # fields are unchanged. Without this, every 10-min tick during the 14h
+    # match window commits + deploys a timestamp-only diff → ~84 junk
+    # commits/day → 100/day Vercel cap risk + ~3,000 commits over the
+    # tournament. Mirrors the live_state.json idempotency pattern (924e20d).
+    prior_payload = None
+    if out_path.exists():
+        try:
+            prior_payload = json.loads(out_path.read_text())
+        except Exception:
+            prior_payload = None
+    prior_matches = (prior_payload or {}).get("completed_matches") if prior_payload else None
+    valid = _stamp_match_updated_at(valid, prior_matches)
+    candidate = {"source": src, "completed_matches": valid, "warnings": warnings_list}
+    if prior_payload and _material_results(prior_payload) == _material_results(candidate):
+        ts = prior_payload.get("updated_at") or datetime.now(timezone.utc).isoformat()
+    else:
+        ts = datetime.now(timezone.utc).isoformat()
     out = {
         "schema": "Completed WC 2026 matches — locked. Future matches are simulated.",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": ts,
         "source": src,
         "completed_matches": valid,
         "warnings": warnings_list,
