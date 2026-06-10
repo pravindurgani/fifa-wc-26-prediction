@@ -1,29 +1,32 @@
 """
-tiebreakers.py — Official FIFA 2026 group-stage and best-third-placed tiebreakers.
+tiebreakers.py — Official FIFA World Cup 2026 group-stage and best-third-placed tiebreakers.
 
-Implements the cascade from
-data/raw/tiebreakers_2026.json:
+Implements the cascade from FIFA World Cup 26 Regulations, Article 13
+(see data/raw/tiebreakers_2026.json for the machine-readable copy).
 
-  Group ranking:
-    1. points (all matches)
-    2. goal difference (all matches)
-    3. goals scored (all matches)
-    4. head-to-head points among tied teams
-    5. head-to-head goal difference
-    6. head-to-head goals scored
-    7. fair-play points (approximated as 0 in sim — no card data)
-    8. FIFA Ranking points (latest)
+  Group ranking (Article 13):
+    1. Points in all group matches
+    For teams level on points the head-to-head criteria apply FIRST:
+    2. Points in matches between the teams concerned
+    3. Goal difference in matches between the teams concerned
+    4. Goals scored in matches between the teams concerned
+    5. If a strict subset of teams separates and ≥2 remain tied, re-apply 2-4
+       to the matches between the still-tied teams ONLY (recursive step).
+    When head-to-head is exhausted (a sub-bucket equals its parent tied set):
+    6. Goal difference in all group matches
+    7. Goals scored in all group matches
+    8. Fair-play points (approximated as 0 in simulation — no card data)
+    9. FIFA Ranking points (latest) — replaces the historic drawing of lots.
 
   Best-third-placed ranking:
-    1. points
-    2. goal difference
-    3. goals scored
-    4. fair-play (skipped)
+    1. Points
+    2. Goal difference
+    3. Goals scored
+    4. Fair-play (skipped — approximated as 0)
     5. FIFA Ranking points
 """
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Optional
 
 
@@ -64,8 +67,8 @@ def _rank_by(stats: list[dict], keys: list[str]) -> list[list[dict]]:
     def kf(s):
         return tuple(-s[k] for k in keys)
     sorted_stats = sorted(stats, key=kf)
-    buckets = []
-    cur = []
+    buckets: list[list[dict]] = []
+    cur: list[dict] = []
     cur_key = None
     for s in sorted_stats:
         k = kf(s)
@@ -81,6 +84,45 @@ def _rank_by(stats: list[dict], keys: list[str]) -> list[list[dict]]:
     return buckets
 
 
+def _resolve_tied_bucket(tied_names: list[str], group_matches: list[dict],
+                        overall: dict[str, dict], fifa_points: dict[str, float]) -> list[dict]:
+    """Resolve a points-tied bucket per Article 13 steps 2-9.
+
+    Applies H2H pts/GD/GF restricted to `tied_names`. For any sub-bucket of ≥2
+    teams that is STRICTLY SMALLER than `tied_names`, recurse on H2H restricted
+    to the sub-bucket. When a sub-bucket equals its parent (H2H cannot separate),
+    fall through to overall GD → overall GF → FIFA Ranking (fair-play is 0).
+    """
+    if len(tied_names) == 1:
+        return [overall[tied_names[0]]]
+
+    tied_set = set(tied_names)
+    h2h_stats = _stats_from_matches(group_matches, tied_names, scope_teams=tied_set)
+    sub_buckets = _rank_by(list(h2h_stats.values()), ["pts", "gd", "gf"])
+
+    resolved: list[dict] = []
+    for sub in sub_buckets:
+        sub_names = [s["name"] for s in sub]
+        if len(sub_names) == 1:
+            resolved.append(overall[sub_names[0]])
+            continue
+        if len(sub_names) < len(tied_names):
+            # Strict subset still tied — re-apply H2H restricted to sub-bucket.
+            resolved.extend(_resolve_tied_bucket(sub_names, group_matches, overall, fifa_points))
+            continue
+        # Sub-bucket equals parent: H2H exhausted. Fall through to overall
+        # GD → overall GF → fair-play (0) → FIFA Ranking.
+        fallback_stats = [overall[n] for n in sub_names]
+        fallback_buckets = _rank_by(fallback_stats, ["gd", "gf"])
+        for fb in fallback_buckets:
+            if len(fb) == 1:
+                resolved.append(fb[0])
+            else:
+                fb_sorted = sorted(fb, key=lambda s: -fifa_points.get(s["name"], 0))
+                resolved.extend(fb_sorted)
+    return resolved
+
+
 def rank_group(group_teams: list[str], group_matches: list[dict],
                fifa_points: dict[str, float]) -> list[dict]:
     """Return teams ordered 1st..4th per FIFA 2026 group-stage tiebreaker cascade.
@@ -89,31 +131,17 @@ def rank_group(group_teams: list[str], group_matches: list[dict],
     fifa_points: {team: float} — FIFA ranking points, used as ultimate tiebreaker.
     """
     overall = _stats_from_matches(group_matches, group_teams)
-    # Step 1-3: pts, GD, GF over all matches
-    buckets = _rank_by(list(overall.values()), ["pts", "gd", "gf"])
+    # Step 1: bucket by points across all group matches.
+    points_buckets = _rank_by(list(overall.values()), ["pts"])
 
     final_order: list[dict] = []
-    for bucket in buckets:
+    for bucket in points_buckets:
         if len(bucket) == 1:
             final_order.append(bucket[0])
             continue
-
+        # Multi-team points bucket — apply H2H cascade (recursive).
         tied_names = [s["name"] for s in bucket]
-        tied_set = set(tied_names)
-
-        # Steps 4-6: head-to-head pts/GD/GF among the still-tied teams
-        h2h_stats = _stats_from_matches(group_matches, tied_names, scope_teams=tied_set)
-        sub_buckets = _rank_by(list(h2h_stats.values()), ["pts", "gd", "gf"])
-
-        for sub in sub_buckets:
-            if len(sub) == 1:
-                final_order.append(overall[sub[0]["name"]])
-                continue
-            # Step 7: fair_play points — approximated as 0 in simulation
-            # Step 8: FIFA Ranking (latest)
-            sub_sorted = sorted(sub, key=lambda s: -fifa_points.get(s["name"], 0))
-            for s in sub_sorted:
-                final_order.append(overall[s["name"]])
+        final_order.extend(_resolve_tied_bucket(tied_names, group_matches, overall, fifa_points))
 
     # Annotate position 1..4
     for pos, s in enumerate(final_order, start=1):

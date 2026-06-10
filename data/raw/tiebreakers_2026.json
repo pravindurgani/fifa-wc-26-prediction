@@ -1,16 +1,18 @@
 {
   "source": "FIFA Official — https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/articles/groups-how-teams-qualify-tie-breakers",
+  "regulation_source": "FIFA World Cup 26 Regulations, Article 13",
   "retrieved_at": "2026-06-09",
   "group_stage_ranking_steps": [
     {"step": 1, "rule": "points", "scope": "all"},
-    {"step": 2, "rule": "goal_difference", "scope": "all"},
-    {"step": 3, "rule": "goals_for", "scope": "all"},
-    {"step": 4, "rule": "points", "scope": "head_to_head_tied"},
-    {"step": 5, "rule": "goal_difference", "scope": "head_to_head_tied"},
-    {"step": 6, "rule": "goals_for", "scope": "head_to_head_tied"},
+    {"step": 2, "rule": "points", "scope": "head_to_head_tied"},
+    {"step": 3, "rule": "goal_difference", "scope": "head_to_head_tied"},
+    {"step": 4, "rule": "goals_for", "scope": "head_to_head_tied"},
+    {"step": 5, "rule": "goal_difference", "scope": "all"},
+    {"step": 6, "rule": "goals_for", "scope": "all"},
     {"step": 7, "rule": "fair_play_points", "scope": "all"},
     {"step": 8, "rule": "fifa_ranking_points", "scope": "current"}
   ],
+  "recursive_head_to_head": true,
   "third_place_ranking_steps": [
     {"step": 1, "rule": "points", "scope": "all"},
     {"step": 2, "rule": "goal_difference", "scope": "all"},
@@ -24,5 +26,5 @@
     "direct_red": -4,
     "yellow_then_direct_red": -5
   },
-  "notes": "2026 change: FIFA Ranking replaces the historic 'drawing of lots' as the ultimate tiebreaker. We approximate fair-play points as 0 in simulation (no card data available at sim time)."
+  "notes": "2026 change: FIFA Ranking replaces the historic 'drawing of lots' as the ultimate tiebreaker. We approximate fair-play points as 0 in simulation (no card data available at sim time). Head-to-head criteria 2-4 are applied recursively: if a strict subset of teams separates and ≥2 remain tied, criteria 2-4 are re-applied restricted to the still-tied teams' matches only."
 }
