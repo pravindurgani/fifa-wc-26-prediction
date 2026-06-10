@@ -837,13 +837,47 @@ section h2 {
 .cmp-row.cmp-a-better .cmp-a-val { color: var(--success); }
 .cmp-row.cmp-b-better .cmp-b-val { color: var(--success); }
 @media (max-width: 640px) {
-  .cmp-row { grid-template-columns: 1.4fr 1fr 1.4fr; gap: 6px; font-size: 12px; }
+  /* Stacked layout: row 1 = centered label, row 2 = A value | B value.
+     grid-template-areas removes the desktop `order`/`grid-column: 3`
+     interactions that were pushing b-val onto its own line. */
+  .cmp-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "label label"
+      "aval  bval";
+    gap: 4px 12px;
+    padding: 10px 4px;
+    font-size: 13px;
+  }
+  .cmp-row > .cmp-label {
+    grid-area: label;
+    grid-column: auto;
+    order: 0;
+    text-align: center;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-3);
+    padding-bottom: 2px;
+  }
+  .cmp-row > .cmp-a-val { grid-area: aval; order: 0; text-align: right; padding-right: 6px; }
+  .cmp-row > .cmp-b-val { grid-area: bval; order: 0; text-align: left;  padding-left: 6px; }
   .cmp-row > .cmp-bar { display: none; }
   .cmp-head { grid-template-columns: 1fr auto 1fr; font-size: 13px; gap: 6px; }
   .cmp-head .cmp-team-a, .cmp-head .cmp-team-b { font-size: 13px; }
   .cmp-head .muted.small { font-size: 10px; }
+  /* Compare pickers + Swap stack as their own grid (replaces wrapping
+     flex chaos in the screenshot — Team A / vs / Team B / Swap each on
+     their own row at narrow widths). */
+  .compare-pickers {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .compare-pickers .vs-pill { justify-self: center; align-self: center; margin: 0; }
   .compare-pickers select { min-width: 0; width: 100%; }
   .compare-pickers label { width: 100%; }
+  #cmp-swap { width: 100%; min-height: 40px; }
 }
 
 /* TABLES */

@@ -170,27 +170,27 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
         <h2>Calibration &amp; performance metrics</h2>
 
         <h3 class="apx-sub">Holdout (4,839 unseen modern matches)</h3>
-        <table class="tbl apx-tbl">
+        <div class="table-wrap"><table class="tbl apx-tbl">
           <thead><tr><th>Metric</th><th class="num">Model</th><th class="num">Elo-only</th><th class="num">Naive (33/33/33)</th></tr></thead>
           <tbody>
             <tr><td>Log-loss</td><td class="num">0.869</td><td class="num">0.908</td><td class="num">1.055</td></tr>
             <tr><td>Brier</td><td class="num">0.511</td><td class="num">0.535</td><td class="num">0.667</td></tr>
             <tr><td>Top-1 accuracy</td><td class="num">60.2%</td><td class="num">55.4%</td><td class="num">48.1%</td></tr>
           </tbody>
-        </table>
+        </table></div>
 
         <h3 class="apx-sub">Walk-forward backtest</h3>
         <p>Each test World Cup is run with only training data <em>strictly older</em> than that tournament (no peeking). All hyperparameters tuned once on pre-2010 data.</p>
-        <table class="tbl apx-tbl">
+        <div class="table-wrap"><table class="tbl apx-tbl">
           <thead><tr><th>WC</th><th class="num">N</th><th class="num">Log-loss</th><th class="num">Brier</th><th class="num">Acc</th><th class="num">Lift vs Elo</th></tr></thead>
           <tbody id="apx-wf"><tr><td colspan="6" class="muted small">Loading walk_forward.json…</td></tr></tbody>
-        </table>
+        </table></div>
 
         <h3 class="apx-sub">Feature ablation</h3>
-        <table class="tbl apx-tbl">
+        <div class="table-wrap"><table class="tbl apx-tbl">
           <thead><tr><th>Configuration</th><th class="num">Log-loss</th><th class="num">Brier</th><th class="num">Accuracy</th></tr></thead>
           <tbody id="apx-abl"><tr><td colspan="4" class="muted small">Loading ablation.json…</td></tr></tbody>
-        </table>
+        </table></div>
       </div>
     </section>
 
@@ -201,7 +201,7 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
       <div>
         <h2>Sensitivity audit (27 scenarios)</h2>
         <p>Every hand-coded assumption was varied across the ranges below. Each scenario is a full 5×5,000 re-run.</p>
-        <table class="tbl apx-tbl">
+        <div class="table-wrap"><table class="tbl apx-tbl">
           <thead><tr><th>Parameter</th><th class="num">Default</th><th class="num">Tested range</th></tr></thead>
           <tbody>
             <tr><td>Host-country Elo boost</td><td class="num">+50</td><td class="num">[+20, +35, +50, +65, +80]</td></tr>
@@ -211,12 +211,12 @@ P(G = k) = Γ(k+φ) / (k! · Γ(φ)) · (φ/(φ+λ))^φ · (λ/(φ+λ))^k</pre>
             <tr><td>Penalty-shootout Elo slope</td><td class="num">600</td><td class="num">[400, 600, 800, 1000]</td></tr>
             <tr><td>NB dispersion φ</td><td class="num">5.0</td><td class="num">[3, 5, 8, 15]</td></tr>
           </tbody>
-        </table>
+        </table></div>
         <p><strong>Top-team ranges from latest sensitivity run:</strong></p>
-        <table class="tbl apx-tbl">
+        <div class="table-wrap"><table class="tbl apx-tbl">
           <thead><tr><th>Team</th><th class="num">Mean</th><th class="num">Min</th><th class="num">Max</th><th class="num">Range</th></tr></thead>
           <tbody id="apx-sens"><tr><td colspan="5" class="muted small">Loading sensitivity.json…</td></tr></tbody>
-        </table>
+        </table></div>
         <p class="muted small">Top-6 rank ordering is identical across all 27 scenarios.</p>
       </div>
     </section>

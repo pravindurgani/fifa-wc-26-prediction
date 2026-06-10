@@ -59,16 +59,20 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
-/* Phones: stack the icon + body so .eqn/<pre> can shrink to viewport width
-   and engage its own horizontal scroll instead of silently clipping under
-   body { overflow-x: hidden }. */
+/* Default grid items have `min-width: auto` which makes 1fr inflate to the
+   intrinsic content width — so any <pre class="eqn"> inside grows past the
+   card boundary and gets silently clipped by `body { overflow-x: hidden }`.
+   This applies at EVERY breakpoint (iPad Mini 768px still hit the bug). */
+.explain > * { min-width: 0; }
+
+/* Phones: stack the icon + body so .eqn/<pre> can take the full viewport
+   width and engage its own horizontal scroll. */
 @media (max-width: 700px) {
   .explain {
     grid-template-columns: 1fr;
     padding: 18px 18px;
     gap: 12px;
   }
-  .explain > * { min-width: 0; }
   .explain-icon { display: none; }
 }
 .explain.warn {
