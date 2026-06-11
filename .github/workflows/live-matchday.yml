@@ -39,11 +39,14 @@ permissions:
 jobs:
   live:
     runs-on: ubuntu-latest
-    # Bumped 15 → 25 for launch: 3×3000-sim re-sim + pip + pytest + Vercel
-    # deploy on a 2-core runner can brush 15 min on the first cold tick.
-    # Atomic writes + circuit breaker mean a killed job leaves no partial
-    # state; next tick retries clean. 25 min eliminates the timeout as a
-    # launch-day failure mode.
+    # Bumped 15 → 25 for launch: 5×5000-sim re-sim + pip + pytest + Vercel
+    # deploy on a 2-core runner is ~6-8 min in the happy path, but can
+    # brush 15 min on a cold pip cache. (Live re-sim uses the same 5×5000
+    # budget as the pre-tournament baseline so the dashboard's "25,000
+    # simulations" headline stays honest after a lock.) Atomic writes +
+    # circuit breaker mean a killed job leaves no partial state; next
+    # tick retries clean. 25 min still leaves 10+ min of headroom and
+    # eliminates the timeout as a launch-day failure mode.
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4

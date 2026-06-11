@@ -296,8 +296,9 @@ def build_live_delta(min_pp: float = 0.5):
     """Diff predictions_static.json vs predictions_live.json → live_delta.json.
 
     `min_pp` filters out movers below the seed-noise threshold (~0.3-0.5pp
-    for 5×5000 vs 3×3000 sample sizes). Pre-tournament deltas should be
-    written via write_empty_delta() instead.
+    for two 5×5000 samples — pre-tournament baseline and live re-sim now
+    use the same budget). Pre-tournament deltas should be written via
+    write_empty_delta() instead.
     """
     static_p = PROC / "predictions.json"
     live_p = PROC / "predictions_live.json"
@@ -474,10 +475,16 @@ def main() -> int:
     if rc != 0:
         print("[run_live_update] update_team_state failed; continuing without it")
 
-    # Step 4: re-run live simulation
+    # Step 4: re-run live simulation. 5×5000 = 25,000 sims matches the
+    # pre-tournament baseline (predictions.json) so the dashboard's headline
+    # "25,000 simulations" number stays honest in live mode. Empirical
+    # runtime on a 2-core Ubuntu runner: ~4-6 min (vs ~30-60s at the prior
+    # 3×3000 budget). The 25-min workflow timeout still leaves 15+ min of
+    # headroom, and re-sims only fire on actual content changes (signature
+    # trigger above), so the 10-min cron cadence isn't at risk of overlap.
     print(f"[run_live_update] {new_count} matches completed, re-simulating…")
     rc = run([sys.executable, "scripts/03_simulate.py",
-              "--live", "--seeds", "3", "--sims", "3000",
+              "--live", "--seeds", "5", "--sims", "5000",
               "--out", "predictions_live.json"])
     if rc != 0:
         new_failures = failures + 1
