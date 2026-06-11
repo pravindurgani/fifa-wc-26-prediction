@@ -21,7 +21,6 @@ Thumbs.db
 
 # Data / model artifacts
 data/processed/*.parquet
-models/*.joblib
 
 # Local agent / tooling state
 .claude/
@@ -31,6 +30,10 @@ models/*.joblib
 !data/raw/
 !data/processed/predictions.json
 !models/metrics.json
+# Trained Poisson goal models — committed because the workflow has no
+# train-then-cache step. ~2.7MB total (XGBRegressor × 2). Retrain via
+# `python scripts/02_goal_model.py` and re-commit when feature schema
+# changes (see scripts/02_goal_model.py:213 for the feature cols write).
 circuit-breaker-state.json
 circuit_breaker_state.json
 data/live/circuit_breaker_state.json
