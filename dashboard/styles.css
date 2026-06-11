@@ -244,6 +244,18 @@ nav.top-nav a:hover { color: var(--text); background: var(--surface); }
   font-size: 11px; color: var(--text-3);
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  transition: color .2s, background .2s;
+}
+/* Stale flag — only set in `live` mode when last_updated_utc > 25 min old.
+   Toggled by updateStaleness() on every poll tick, not just on data change,
+   so it correctly flips when the pipeline goes silent (idempotency guard
+   intentionally freezes the timestamp on no-op ticks). */
+.last-updated.stale {
+  color: var(--danger, #c0392b);
+  font-weight: 600;
+}
+.last-updated.stale::before {
+  content: "⚠ ";
 }
 
 .theme-toggle {

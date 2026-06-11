@@ -304,9 +304,21 @@ function startLivePolling(intervalMs = 60_000) {
   const tick = async () => {
     if (document.hidden) return;          // pause when tab not visible
     const triple = await fetchLiveTriple();
-    if (!triple.liveState) return;
+    if (!triple.liveState) {
+      // Fetch failed — still re-evaluate staleness against the cached
+      // live_state so the "Updated" badge flips to red when the pipeline
+      // genuinely stops, not just when applyLiveUpdate runs.
+      updateStaleness(window._liveState);
+      return;
+    }
     const ts = triple.liveState.last_updated_utc;
-    if (ts && ts === _lastLiveTimestamp) return;   // nothing new
+    if (ts && ts === _lastLiveTimestamp) {
+      // No bump → no full re-render, but the wall-clock age may have crossed
+      // the stale threshold since the last poll. Cheap toggle of one CSS
+      // class — no layout thrash.
+      updateStaleness(triple.liveState);
+      return;
+    }
     _lastLiveTimestamp = ts;
     applyLiveUpdate(triple);
   };
@@ -328,15 +340,48 @@ function renderAllCharts(data, cal) {
   if (cal) renderCalibration(cal);
 }
 
+// Stale threshold: 25 min covers two cron-tick ages of slack
+// (cron fires every 10 min during the match window, with ~1 min jitter on
+// Vercel Hobby). Only applied in live mode — pre-tournament timestamps are
+// expected to sit for days.
+const STALE_THRESHOLD_MIN = 25;
+
+function _ageMinutes(ts) {
+  const t = Date.parse(ts);
+  if (!Number.isFinite(t)) return null;
+  return (Date.now() - t) / 60000;
+}
+
+function _isStale(liveState) {
+  if (!liveState || liveState.mode !== 'live') return false;
+  const age = _ageMinutes(liveState.last_updated_utc);
+  return age != null && age > STALE_THRESHOLD_MIN;
+}
+
 function renderLastUpdated(data, liveState) {
   const el = document.getElementById('last-updated');
   if (!el) return;
   const ts = liveState?.last_updated_utc || data.generated_at || '';
-  if (!ts) { el.textContent = ''; return; }
+  if (!ts) { el.textContent = ''; el.classList.remove('stale'); return; }
   const d = new Date(ts);
   const opts = { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short', timeZone: 'UTC' };
   el.textContent = `Updated ${d.toLocaleString('en-GB', opts)} UTC`;
-  el.title = ts;
+  const stale = _isStale(liveState);
+  el.classList.toggle('stale', stale);
+  el.title = stale
+    ? `${ts} — last update ${Math.round(_ageMinutes(ts))} min ago (stale: pipeline may be down)`
+    : ts;
+}
+
+// Standalone staleness check — invoked on each poll tick so the badge
+// flips to "stale" even when the timestamp itself hasn't changed (the
+// idempotency guard intentionally freezes last_updated_utc on no-op
+// ticks). Reads `mode` from the cached live_state so it correctly
+// distinguishes "pre-tournament dormant" from "live but silent".
+function updateStaleness(liveState) {
+  const el = document.getElementById('last-updated');
+  if (!el || !liveState) return;
+  el.classList.toggle('stale', _isStale(liveState));
 }
 
 function providerLabel(source) {
