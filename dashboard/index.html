@@ -461,11 +461,12 @@
         <h3>How live updates work</h3>
         <div class="live-info-grid">
           <div>
-            <strong>Automatic re-simulation.</strong> A GitHub Actions workflow is scheduled to fire every 10 minutes during the tournament window
-            (11 Jun → 19 Jul 2026). It checks for newly-finalised matches (status <code>FT</code> / <code>AET</code> / <code>PEN</code> only), locks their
-            scorelines, re-runs the full Monte Carlo simulator, and commits the new JSON. The dashboard picks it up on the next page load — no manual refresh
-            needed. <span class="muted small">Note: GitHub may throttle scheduled events on busy free-tier infra, so the real cadence sits closer to
-            10 min – 1 h depending on platform load. Expect typical refresh well under an hour after each final whistle.</span>
+            <strong>Automatic re-simulation.</strong> A Vercel Cron dispatcher (<code>/api/dispatch</code>) fires every 10 minutes during the tournament window
+            (11 Jun → 19 Jul 2026) and triggers a GitHub Actions workflow via <code>workflow_dispatch</code>. The workflow checks for newly-finalised matches
+            (status <code>FT</code> / <code>AET</code> / <code>PEN</code> only), locks their scorelines, re-runs the full Monte Carlo simulator, atomically writes
+            the JSON, and commits + deploys only if state changed. The dashboard picks it up on the next page load — no manual refresh needed.
+            <span class="muted small">Typical end-to-end latency is ~30–90 s after a final whistle, gated by API-Football's FT-status propagation. GitHub's
+            native cron is configured as a redundant secondary path.</span>
           </div>
           <div>
             <strong>Data source.</strong> Live provider shown in the status badge above. Supports <strong>API-Football</strong> (active when
