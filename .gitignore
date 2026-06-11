@@ -29,6 +29,11 @@ data/processed/*.parquet
 # Keep these:
 !data/raw/
 !data/processed/predictions.json
+# matches_clean.parquet is the historical-match dataset that scripts/03_simulate.py:702
+# reads unconditionally in --live mode for form features. ~558KB. Without this
+# whitelist the live workflow fails at the next sim invocation (same root cause
+# as the joblib models being missing). Retrain via `python scripts/01_prepare_data.py`.
+!data/processed/matches_clean.parquet
 !models/metrics.json
 # Trained Poisson goal models — committed because the workflow has no
 # train-then-cache step. ~2.7MB total (XGBRegressor × 2). Retrain via
