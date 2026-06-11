@@ -302,13 +302,18 @@ def write_empty_delta():
     return out
 
 
-def build_live_delta(min_pp: float = 0.5):
+def build_live_delta(min_pp: float = 0.1):
     """Diff predictions_static.json vs predictions_live.json → live_delta.json.
 
-    `min_pp` filters out movers below the seed-noise threshold (~0.3-0.5pp
-    for two 5×5000 samples — pre-tournament baseline and live re-sim now
-    use the same budget). Pre-tournament deltas should be written via
-    write_empty_delta() instead.
+    `min_pp` filters out movers below the seed-noise floor. 0.1pp is a soft
+    noise filter (well under 1σ of seed variance for a 5×5000 sim) chosen
+    so that shifts caused by real match locks always surface, even after
+    just one match. The prior 0.5pp default — sized for comparing two
+    *independent* baseline runs — gated out every team after the opener
+    (largest delta was 0.49pp, fractionally below cutoff), leaving the
+    dashboard with empty mover arrays and the misleading "no matches
+    finished yet" UI fallback. Pre-tournament deltas should still be
+    written via write_empty_delta() instead.
     """
     static_p = PROC / "predictions.json"
     live_p = PROC / "predictions_live.json"

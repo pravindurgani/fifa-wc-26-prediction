@@ -553,9 +553,10 @@ function renderMovers(data, liveState, liveDelta) {
   const root = document.getElementById('movers-content');
   if (!root) return;
   const isLive = liveState?.mode === 'live';
+  const lockedCount = Number(liveState?.completed_matches_count) || 0;
   const movers = (liveDelta?.all_movers || []);
 
-  if (!isLive || movers.length === 0) {
+  if (!isLive || lockedCount === 0) {
     root.innerHTML = `
       <div class="movers-empty">
         <div class="movers-empty-icon" aria-hidden="true">
@@ -564,6 +565,24 @@ function renderMovers(data, liveState, liveDelta) {
         <div>
           <strong>No matches have finished yet.</strong>
           <span class="muted small"> Champion-probability deltas will appear here automatically as matches lock during the tournament. The simulator re-runs every 15 minutes during the matchday window (11 Jun → 19 Jul 2026).</span>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (movers.length === 0) {
+    // Live mode + matches locked, but every team's shift is below the seed-noise
+    // floor. Tell the truth instead of falling back to "no matches finished" (which
+    // misled users during the 2026-06-11 opener when all four largest movers landed
+    // fractionally below the prior 0.5pp threshold).
+    root.innerHTML = `
+      <div class="movers-empty">
+        <div class="movers-empty-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <div>
+          <strong>${lockedCount} match${lockedCount === 1 ? '' : 'es'} locked — no significant shifts yet.</strong>
+          <span class="muted small"> Every team's champion probability moved by less than the noise floor of the 25,000-sim re-run. Larger movers will surface as more matches lock.</span>
         </div>
       </div>`;
     return;
