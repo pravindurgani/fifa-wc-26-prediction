@@ -357,7 +357,7 @@ def test_main_skips_sim_when_count_and_signature_both_match(tmp_path, monkeypatc
     # compute it via the helper after seeding so we don't have to hardcode.
     current_sig = mod.get_completed_signature()
     assert current_sig  # sanity: non-empty hash for 1 locked match
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [locked], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -391,7 +391,7 @@ def test_main_forces_resim_when_signature_differs_with_same_count(tmp_path, monk
     }))
     # predictions_live still has the same COUNT (1 locked) so the count
     # gate alone says "skip". Sim must run because the signature gate fires.
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [{"m": 4, "home_goals": 2, "away_goals": 1}],
         "team_predictions": [],
     }))
@@ -439,7 +439,7 @@ def test_main_emits_provider_downgrade_warning_when_env_lies(tmp_path, monkeypat
     (live / "results_2026.json").write_text(json.dumps({
         "source": "mock", "completed_matches": [], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -473,7 +473,7 @@ def test_main_no_downgrade_warning_when_env_and_fetcher_agree(tmp_path, monkeypa
     (live / "results_2026.json").write_text(json.dumps({
         "source": "api_football", "completed_matches": [], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -505,7 +505,7 @@ def test_main_writes_fetch_failure_warning_and_does_not_trip_cb(tmp_path, monkey
     (live / "results_2026.json").write_text(json.dumps({
         "source": "api_football", "completed_matches": [], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -554,7 +554,12 @@ def test_main_increments_cb_and_preserves_predictions_on_sim_failure(tmp_path, m
         "completed_matches": [{"m": 4, "home_goals": 2, "away_goals": 1}],
         "team_predictions": [{"team": "Spain", "p_champion": 0.24}],
     }
+    # PROC seed = the "prior valid sim output" the preservation contract guards.
+    # DASH seed = mirrors what was last synced to production so the count gate
+    # passes (count_matches=True) and the SIGNATURE gate is what forces resim —
+    # which is the exact regression path this test is designed to exercise.
     (proc / "predictions_live.json").write_text(json.dumps(original_live_predictions))
+    (dash / "predictions_live.json").write_text(json.dumps(original_live_predictions))
     (dash / "live_state.json").write_text(json.dumps({
         "mode": "live", "last_updated_utc": "2026-06-15T12:00:00+00:00",
         "completed_matches_count": 1, "simulation_rerun_this_tick": True,
@@ -660,7 +665,7 @@ def test_main_invokes_sigterm_handler_install(tmp_path, monkeypatch):
     (live / "results_2026.json").write_text(json.dumps({
         "source": "api_football", "completed_matches": [], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -699,7 +704,7 @@ def test_main_falls_back_to_expected_source_when_results_source_missing(tmp_path
     (live / "results_2026.json").write_text(json.dumps({
         "completed_matches": [], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [], "team_predictions": [],
     }))
     (dash / "live_state.json").write_text(json.dumps({
@@ -733,7 +738,7 @@ def test_main_emits_provider_downgrade_warning_on_sim_path_too(tmp_path, monkeyp
     (live / "results_2026.json").write_text(json.dumps({
         "source": "mock", "completed_matches": [corrected], "warnings": [],
     }))
-    (proc / "predictions_live.json").write_text(json.dumps({
+    (dash / "predictions_live.json").write_text(json.dumps({
         "completed_matches": [{"m": 4, "home_goals": 2, "away_goals": 1}],
         "team_predictions": [],
     }))

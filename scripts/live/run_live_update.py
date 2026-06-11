@@ -99,8 +99,18 @@ def get_results_warnings() -> list:
 
 
 def get_live_predictions_locked_count() -> int:
-    """How many matches were locked in the most recent predictions_live.json."""
-    p = PROC / "predictions_live.json"
+    """How many matches were locked in the most-recently-deployed
+    predictions_live.json. Reads from dashboard/ (which the workflow
+    commits via the allow-list at live-matchday.yml's "Commit updated JSON"
+    step) rather than from data/processed/ (which is gitignored: every
+    workflow checkout resets it to the pre-tournament baseline = 0 locked).
+
+    Reading PROC made every cron tick after the first match locked spuriously
+    fail the early-exit count gate — `0 (stale PROC) != 1 (current results)`
+    → full sim re-ran every 10 min, burning ~6-10 min CI + a Vercel deploy
+    on each no-op tick. Reading DASH (the persisted deployed state) gives
+    the semantically correct value: "what was last synced to production"."""
+    p = DASH / "predictions_live.json"
     if not p.exists():
         return -1
     try:
