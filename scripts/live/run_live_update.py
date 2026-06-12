@@ -210,11 +210,22 @@ def write_live_state(mode: str, completed_count: int, sim_rerun: bool,
                      synced_signature: str | None = None):
     """Atomic live_state.json write.
 
-    Preserves the previous `last_updated_utc` when no material field changed
-    so unchanged ticks produce a byte-identical file (no git diff → no
-    commit → no deploy). Material fields: mode, completed_matches_count,
-    simulation_rerun_this_tick, source, provider_mode, warnings,
-    synced_signature.
+    Two timestamps, two purposes:
+      • `last_updated_utc` is preserved when no material field changed so
+        unchanged ticks produce a byte-identical run of the data block —
+        downstream consumers reading this field see "the predictions
+        themselves last shifted at T", which is the truthful answer.
+      • `last_check_utc` ALWAYS bumps to "now" so the frontend can prove
+        the workflow is still firing even on no-op ticks. Without this,
+        the staleness badge would lie red whenever real-world matches
+        weren't changing — which is the exact bug the 2026-06-12 review
+        caught (badge red mid-tournament despite a healthy pipeline).
+
+    Material fields (the diff for `last_updated_utc`): mode,
+    completed_matches_count, simulation_rerun_this_tick, source,
+    provider_mode, warnings, synced_signature. Note that `last_check_utc`
+    is deliberately NOT material — it must not feed back into its own
+    change-detection.
 
     `synced_signature` is the hash of the results_2026.json content that
     the most recent successful sim was run against. It is "sticky" — when
@@ -282,6 +293,7 @@ def write_live_state(mode: str, completed_count: int, sim_rerun: bool,
     state = {
         "mode": mode,
         "last_updated_utc": ts,
+        "last_check_utc": datetime.now(timezone.utc).isoformat(),
         "completed_matches_count": completed_count,
         "simulation_rerun_this_tick": sim_rerun,
         "source": source,

@@ -182,6 +182,121 @@ def test_synced_signature_is_preserved_when_omitted(tmp_path):
     assert state["synced_signature"] == "abc123def456"  # preserved
 
 
+def test_last_check_utc_always_bumps_even_on_no_op(tmp_path):
+    """Pins the headline contract of the 2026-06-12 timestamp fix:
+    `last_check_utc` bumps to a fresh stamp on EVERY write, even when
+    `last_updated_utc` is being preserved by the idempotency guard.
+
+    Without this signal the dashboard can't distinguish "data hasn't
+    changed because the pipeline is healthy but quiet" from "data hasn't
+    changed because the pipeline stopped firing" — the original bug
+    that lit the stale badge red mid-tournament.
+
+    Freshness assertion guards mutation M4 (replace `datetime.now()` with
+    a constant like '2026-01-01T00:00:00+00:00') — without the wall-clock
+    check below, that mutation would survive because "constant" still
+    satisfies "non-empty and != prior"."""
+    from datetime import datetime, timedelta, timezone
+    dash = tmp_path / "dashboard"
+    dash.mkdir()
+    mod = _import_module(tmp_path, dash)
+    prior = {
+        "mode": "live",
+        "last_updated_utc": "2026-06-15T12:00:00+00:00",
+        "last_check_utc":   "2026-06-15T12:00:00+00:00",
+        "completed_matches_count": 2,
+        "simulation_rerun_this_tick": False,
+        "source": "api_football",
+        "provider_mode": "active",
+        "warnings": [],
+        "synced_signature": "abc",
+    }
+    (dash / "live_state.json").write_text(json.dumps(prior))
+    # Material content identical → last_updated_utc must be preserved BUT
+    # last_check_utc must still advance.
+    before = datetime.now(timezone.utc)
+    state = mod.write_live_state(
+        mode="live", completed_count=2, sim_rerun=False, warnings=[],
+        source="api_football", provider_mode="active",
+    )
+    after = datetime.now(timezone.utc)
+    assert state["last_updated_utc"] == prior["last_updated_utc"], (
+        "no-op tick must preserve last_updated_utc (idempotency contract)")
+    assert state["last_check_utc"] != prior["last_check_utc"], (
+        "no-op tick must STILL advance last_check_utc (heartbeat contract)")
+    # Freshness: the heartbeat must be wall-clock-now, not a constant or
+    # an alias to some stale field elsewhere in the state. 60s of slack
+    # absorbs CI runner clock skew without weakening the mutation guard.
+    check_ts = datetime.fromisoformat(state["last_check_utc"])
+    assert before - timedelta(seconds=60) <= check_ts <= after + timedelta(seconds=60), (
+        f"last_check_utc must be wall-clock-now (±60s); got {check_ts!r} "
+        f"outside [{before!r}, {after!r}] — mutation M4 (constant timestamp) "
+        f"would land here")
+    # And the on-disk file matches what we returned.
+    written = json.loads((dash / "live_state.json").read_text())
+    assert written["last_check_utc"] == state["last_check_utc"]
+
+
+def test_last_check_utc_present_when_prior_lacks_it(tmp_path):
+    """Backward-compat: prior file using the OLD schema (no last_check_utc)
+    must still produce a forward-schema write. Prevents a regression where
+    a graceful migration path is skipped and old files leak into new code
+    without the field, breaking the staleness UI."""
+    dash = tmp_path / "dashboard"
+    dash.mkdir()
+    mod = _import_module(tmp_path, dash)
+    legacy = {  # deliberately no last_check_utc field
+        "mode": "live",
+        "last_updated_utc": "2026-06-12T04:11:31+00:00",
+        "completed_matches_count": 2,
+        "simulation_rerun_this_tick": False,
+        "source": "api_football",
+        "provider_mode": "active",
+        "warnings": [],
+        "synced_signature": "abc",
+    }
+    (dash / "live_state.json").write_text(json.dumps(legacy))
+    state = mod.write_live_state(
+        mode="live", completed_count=2, sim_rerun=False, warnings=[],
+        source="api_football", provider_mode="active",
+    )
+    assert "last_check_utc" in state
+    assert state["last_check_utc"]  # non-empty
+    assert state["last_check_utc"] != legacy["last_updated_utc"], (
+        "fresh stamp, not aliased to the legacy field")
+
+
+def test_last_check_utc_is_not_a_material_change_trigger(tmp_path):
+    """Adversarial guard: if `last_check_utc` ever got added to the material
+    fingerprint by accident, every tick would bump `last_updated_utc` too
+    and the idempotency optimization would silently die. Seed a prior with
+    a different last_check_utc and confirm last_updated_utc is STILL
+    preserved when material content matches."""
+    dash = tmp_path / "dashboard"
+    dash.mkdir()
+    mod = _import_module(tmp_path, dash)
+    prior = {
+        "mode": "live",
+        "last_updated_utc": "2026-06-15T12:00:00+00:00",
+        "last_check_utc":   "2026-06-15T11:45:00+00:00",  # 15 min ago
+        "completed_matches_count": 2,
+        "simulation_rerun_this_tick": False,
+        "source": "api_football",
+        "provider_mode": "active",
+        "warnings": [],
+        "synced_signature": "abc",
+    }
+    (dash / "live_state.json").write_text(json.dumps(prior))
+    state = mod.write_live_state(
+        mode="live", completed_count=2, sim_rerun=False, warnings=[],
+        source="api_football", provider_mode="active",
+    )
+    assert state["last_updated_utc"] == prior["last_updated_utc"], (
+        "last_check_utc differing must NOT push last_updated_utc to bump — "
+        "if this fails, the material fingerprint accidentally absorbed the "
+        "check-time field and the idempotency optimization is dead")
+
+
 def test_signature_change_bumps_timestamp(tmp_path):
     """Same count + same mode but different synced_signature must bump
     last_updated_utc — that's the timestamp signal for score corrections."""

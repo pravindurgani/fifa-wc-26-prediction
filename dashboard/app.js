@@ -297,9 +297,12 @@ let _compareState = {
 };
 
 function startLivePolling(intervalMs = 60_000) {
-  // Seed last-seen ts from whatever was loaded at boot.
+  // Seed last-seen ts from the dedicated dedup attribute set by
+  // renderLastUpdated() — NOT the title (which may carry a composite string
+  // like "$ts (data) · last checked $check" and would never equality-match
+  // a raw timestamp, causing every poll tick to re-render unnecessarily).
   _lastLiveTimestamp =
-    document.querySelector('#last-updated')?.getAttribute('title') || null;
+    document.querySelector('#last-updated')?.dataset.ts || null;
 
   const tick = async () => {
     if (document.hidden) return;          // pause when tab not visible
@@ -354,7 +357,13 @@ function _ageMinutes(ts) {
 
 function _isStale(liveState) {
   if (!liveState || liveState.mode !== 'live') return false;
-  const age = _ageMinutes(liveState.last_updated_utc);
+  // Prefer `last_check_utc` — bumps every workflow tick, so it goes red ONLY
+  // when the pipeline genuinely stops firing. Fall back to `last_updated_utc`
+  // for backward compatibility with the older schema (and during the brief
+  // window after a frontend deploy lands but before the next backend tick
+  // has written the new field).
+  const ts = liveState.last_check_utc || liveState.last_updated_utc;
+  const age = _ageMinutes(ts);
   return age != null && age > STALE_THRESHOLD_MIN;
 }
 
@@ -362,15 +371,34 @@ function renderLastUpdated(data, liveState) {
   const el = document.getElementById('last-updated');
   if (!el) return;
   const ts = liveState?.last_updated_utc || data.generated_at || '';
-  if (!ts) { el.textContent = ''; el.classList.remove('stale'); return; }
+  if (!ts) {
+    el.textContent = '';
+    el.classList.remove('stale');
+    delete el.dataset.ts;
+    return;
+  }
   const d = new Date(ts);
   const opts = { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short', timeZone: 'UTC' };
   el.textContent = `Updated ${d.toLocaleString('en-GB', opts)} UTC`;
+  // Dedicated dedup signal — the polling loop reads this to decide whether the
+  // data block has materially changed. Must be the raw ISO timestamp; the
+  // title attribute below can be a composite string (e.g. "$ts (data) · last
+  // checked $check") and is no longer safe for equality comparison.
+  el.dataset.ts = ts;
   const stale = _isStale(liveState);
   el.classList.toggle('stale', stale);
-  el.title = stale
-    ? `${ts} — last update ${Math.round(_ageMinutes(ts))} min ago (stale: pipeline may be down)`
-    : ts;
+  // Hover text surfaces both timestamps when they diverge — answers the natural
+  // "why does this say 04:11 if the pipeline polls every 10 min?" question
+  // without requiring a second visible label.
+  const check = liveState?.last_check_utc;
+  if (stale) {
+    const checkAge = _ageMinutes(check || ts);
+    el.title = `${ts} — last pipeline tick ${Math.round(checkAge)} min ago (stale: pipeline may be down)`;
+  } else if (check && check !== ts) {
+    el.title = `${ts} (data) · last checked ${check}`;
+  } else {
+    el.title = ts;
+  }
 }
 
 // Standalone staleness check — invoked on each poll tick so the badge

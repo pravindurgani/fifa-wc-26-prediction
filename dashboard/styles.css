@@ -246,10 +246,14 @@ nav.top-nav a:hover { color: var(--text); background: var(--surface); }
   white-space: nowrap;
   transition: color .2s, background .2s;
 }
-/* Stale flag — only set in `live` mode when last_updated_utc > 25 min old.
-   Toggled by updateStaleness() on every poll tick, not just on data change,
-   so it correctly flips when the pipeline goes silent (idempotency guard
-   intentionally freezes the timestamp on no-op ticks). */
+/* Stale flag — set in `live` mode when `last_check_utc` is > 25 min old.
+   Toggled by updateStaleness() on every poll tick. The check field is
+   distinct from the displayed `last_updated_utc`: the latter is preserved
+   on no-op ticks (truthful "when did the data last change"), while the
+   former bumps every workflow tick (truthful "when did we last verify").
+   Using the check field for staleness means the badge only goes red when
+   the pipeline genuinely stops firing, not when there's simply no new
+   match data to react to. */
 .last-updated.stale {
   color: var(--danger, #c0392b);
   font-weight: 600;
