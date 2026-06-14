@@ -1,11 +1,11 @@
 {
   "mode": "live",
-  "last_updated_utc": "2026-06-14T03:21:01.622535+00:00",
-  "last_check_utc": "2026-06-14T05:51:20.406261+00:00",
-  "completed_matches_count": 7,
-  "simulation_rerun_this_tick": false,
+  "last_updated_utc": "2026-06-14T07:01:25.200960+00:00",
+  "last_check_utc": "2026-06-14T07:01:25.200967+00:00",
+  "completed_matches_count": 8,
+  "simulation_rerun_this_tick": true,
   "source": "api_football",
   "provider_mode": "active",
   "warnings": [],
-  "synced_signature": "ae7949bb07d75124"
+  "synced_signature": "a63c89f6578c9e80"
 }

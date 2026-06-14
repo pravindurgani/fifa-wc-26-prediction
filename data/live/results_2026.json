@@ -1,6 +1,6 @@
 {
   "schema": "Completed WC 2026 matches \u2014 locked. Future matches are simulated.",
-  "updated_at": "2026-06-14T03:11:21.274794+00:00",
+  "updated_at": "2026-06-14T06:53:56.314742+00:00",
   "source": "api_football",
   "completed_matches": [
     {
@@ -106,6 +106,21 @@
       "elapsed": 90,
       "source": "api_football",
       "updated_at": "2026-06-14T03:11:21.274100+00:00",
+      "raw_status": "FT"
+    },
+    {
+      "m": 8,
+      "provider_fixture_id": "1539001",
+      "date": "2026-06-13",
+      "home": "Australia",
+      "away": "Turkey",
+      "home_score": 2,
+      "away_score": 0,
+      "status": "FT",
+      "status_long": "Match Finished",
+      "elapsed": 90,
+      "source": "api_football",
+      "updated_at": "2026-06-14T06:53:56.314055+00:00",
       "raw_status": "FT"
     }
   ],
